@@ -964,12 +964,33 @@ app.get('/api/lyrics', async (req, res) => {
   }
 });
 
-// Serve frontend in production
+// Serve frontend in production (if built)
 const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
+const fs = require('fs');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
+// Root status endpoint for cloud hosting checks & health monitors
+app.get('/', (req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.json({
+    status: 'online',
+    app: 'Harmoniq Audio Streaming Engine',
+    version: '2.0',
+    time: new Date().toISOString()
+  });
+});
 
 app.use((req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.status(404).json({ error: 'Endpoint not found', path: req.path });
 });
 
 // Helper to get local IP
