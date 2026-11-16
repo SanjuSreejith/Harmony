@@ -15,7 +15,28 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Initialize YouTube Innertube client with VISIONOS client type (unthrottled, unblocked DASH streams)
+// High-performance In-Memory Response Caches for Cloud (Instant sub-100ms loads)
+const searchCache = new Map(); // query -> { data, timestamp }
+const trendingCache = new Map(); // key -> { data, timestamp }
+const recsCache = new Map(); // key -> { data, timestamp }
+
+const CACHE_TTL_SEARCH = 1000 * 60 * 30; // 30 mins
+const CACHE_TTL_TRENDING = 1000 * 60 * 60 * 2; // 2 hours
+const CACHE_TTL_RECS = 1000 * 60 * 45; // 45 mins
+
+// Clean up old cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of searchCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL_SEARCH) searchCache.delete(k);
+  }
+  for (const [k, v] of trendingCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL_TRENDING) trendingCache.delete(k);
+  }
+  for (const [k, v] of recsCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL_RECS) recsCache.delete(k);
+  }
+}, 1000 * 60 * 15);
 let ytClient = null;
 let ytInitPromise = null;
 
@@ -215,12 +236,20 @@ function extractRichTrackMetadata({ title = '', description = '', author = '' })
   };
 }
 
-// 1. Search API with filter support & rich metadata extraction
+// 1. Search API with filter support, instant in-memory cache & rich metadata extraction
 app.get('/api/search', async (req, res) => {
   const query = req.query.q;
   const filter = req.query.filter || 'all'; // 'all' | 'songs' | 'artists'
   if (!query || typeof query !== 'string') {
     return res.status(400).json({ error: 'Search query is required' });
+  }
+
+  const cacheKey = `${query.trim().toLowerCase()}_${filter}`;
+  if (searchCache.has(cacheKey)) {
+    const cached = searchCache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_TTL_SEARCH) {
+      return res.json({ results: cached.data });
+    }
   }
 
   try {
@@ -252,6 +281,7 @@ app.get('/api/search', async (req, res) => {
       };
     });
 
+    searchCache.set(cacheKey, { data: videos, timestamp: Date.now() });
     res.json({ results: videos });
   } catch (err) {
     console.error('[Search Error]', err.message);
@@ -619,6 +649,15 @@ app.post('/api/recommendations', async (req, res) => {
       primaryArtist = recentHistory[0].artist || primaryArtist;
     }
 
+    // Fast In-Memory Recommendations Cache check
+    const recCacheKey = `${effectiveLang}_${secondaryLang}_${mood}_${genreToUse || 'general'}_${primaryArtist || 'all'}`;
+    if (recsCache.has(recCacheKey)) {
+      const cached = recsCache.get(recCacheKey);
+      if (Date.now() - cached.timestamp < CACHE_TTL_RECS) {
+        return res.json(cached.data);
+      }
+    }
+
     // 5. Clean title of latest played track for contextual similarity
     const cleanLatestTitle = latestTrack?.title
       ? cleanRawTitle(latestTrack.title).slice(0, 36)
@@ -763,7 +802,7 @@ app.post('/api/recommendations', async (req, res) => {
       });
     }
 
-    res.json({
+    const responsePayload = {
       heavyRotation: filterAndDeduplicate(frequentTracks, { minDuration: 40, maxDuration: 1800 }).slice(0, 12),
       lastPlayedMix: { title: sectionMeta[0].title, subtitle: sectionMeta[0].subtitle, tracks: mapAndClean(rawResults[0], sectionMeta[0]) },
       languageMix: { title: sectionMeta[1].title, subtitle: sectionMeta[1].subtitle, tracks: mapAndClean(rawResults[1], sectionMeta[1]) },
@@ -774,7 +813,12 @@ app.post('/api/recommendations', async (req, res) => {
       moodMix: { title: sectionMeta[6].title, subtitle: sectionMeta[6].subtitle, tracks: mapAndClean(rawResults[6], sectionMeta[6]) },
       activeLanguage: effectiveLang,
       secondaryLanguage: secondaryLang
-    });
+    };
+
+    const recCacheKey = `${effectiveLang}_${secondaryLang}_${mood}_${genreToUse}_${primaryArtist}`;
+    recsCache.set(recCacheKey, { data: responsePayload, timestamp: Date.now() });
+
+    res.json(responsePayload);
   } catch (err) {
     console.error('[Recommendation Error]', err.message);
     res.status(500).json({ error: 'Failed to generate recommendations' });
@@ -890,10 +934,18 @@ app.get('/api/related/:videoId', async (req, res) => {
   }
 });
 
-// 5. Trending Songs by Language / Genre
+// 5. Trending Songs by Language / Genre with high-speed Cache
 app.get('/api/trending', async (req, res) => {
   const genre = req.query.genre || 'trending';
   const language = req.query.lang || '';
+  const cacheKey = `${genre}_${language}`;
+
+  if (trendingCache.has(cacheKey)) {
+    const cached = trendingCache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_TTL_TRENDING) {
+      return res.json({ results: cached.data });
+    }
+  }
 
   let query = 'Top trending popular music songs 2026';
   if (language && language !== 'all') {
@@ -914,6 +966,7 @@ app.get('/api/trending', async (req, res) => {
       views: v.views
     }));
 
+    trendingCache.set(cacheKey, { data: videos, timestamp: Date.now() });
     res.json({ results: videos });
   } catch (err) {
     console.error('[Trending Error]', err.message);
