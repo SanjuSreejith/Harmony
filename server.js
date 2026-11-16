@@ -815,7 +815,6 @@ app.post('/api/recommendations', async (req, res) => {
       secondaryLanguage: secondaryLang
     };
 
-    const recCacheKey = `${effectiveLang}_${secondaryLang}_${mood}_${genreToUse}_${primaryArtist}`;
     recsCache.set(recCacheKey, { data: responsePayload, timestamp: Date.now() });
 
     res.json(responsePayload);
