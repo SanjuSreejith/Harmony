@@ -108,6 +108,8 @@ export function PlayerProvider({ children }) {
   };
   const [buffered, setBuffered] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const isLoadingRef = useRef(false);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
   const [playbackError, setPlaybackError] = useState(null);
   const [useDirectPlayer, setUseDirectPlayer] = useState(false);
 
@@ -608,13 +610,16 @@ export function PlayerProvider({ children }) {
 
   // Master live playback heartbeat for accurate timeline sync across ALL playback engines
   useEffect(() => {
-    // Strictly don't tick or advance the scrubber while song is still loading or paused
-    if (!isPlaying || isLoading) return;
+    // Strictly don't tick or advance the scrubber while song is still loading, buffering, or paused
+    if (!isPlaying || isLoading || !hasRealAudioStarted) return;
 
     let lastTickTime = Date.now();
     let tickCount = 0;
 
     const interval = setInterval(() => {
+      // Re-verify loading state inside tick: strictly pause slider if loading/buffering
+      if (isLoadingRef.current) return;
+
       tickCount++;
       const now = Date.now();
       const deltaSec = Math.max(0, (now - lastTickTime) / 1000);
@@ -624,7 +629,7 @@ export function PlayerProvider({ children }) {
       const isVideo = isVideoModeRef.current;
 
       if (!isVideo) {
-        let cur = 0;
+        let cur = currentTimeRef.current || 0;
         // 1. If HTML5 audio element has an active stream playing (strictly when NOT in direct player mode)
         if (!useDirectPlayer && audio && !audio.paused && !isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
           cur = audio.currentTime;
@@ -634,10 +639,11 @@ export function PlayerProvider({ children }) {
             setDuration(audio.duration);
           }
         } else if (useDirectPlayer) {
-          // 2. Direct player active: smoothly advance timeline based on verified playback
-          if (hasRealAudioStartedRef.current && !isLoading) {
+          // 2. Direct player active: smoothly advance timeline based on verified playback ONLY when not loading/buffering
+          if (hasRealAudioStartedRef.current && !isLoadingRef.current && isPlaying) {
             const prev = currentTimeRef.current || 0;
-            cur = prev + deltaSec;
+            const safeDelta = Math.min(0.3, deltaSec);
+            cur = prev + safeDelta;
           } else {
             cur = currentTimeRef.current || 0;
           }
@@ -678,7 +684,7 @@ export function PlayerProvider({ children }) {
     }, 250);
 
     return () => clearInterval(interval);
-  }, [isPlaying, isLoading, useDirectPlayer]);
+  }, [isPlaying, isLoading, hasRealAudioStarted, useDirectPlayer]);
 
   // Handle native Android notification media actions and Foreground Service events
   useEffect(() => {
@@ -760,6 +766,7 @@ export function PlayerProvider({ children }) {
       }
     };
     const handleWaiting = () => setIsLoading(true);
+    const handleStalled = () => setIsLoading(true);
     const handleCanPlay = () => {
       if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
         try {
@@ -794,8 +801,11 @@ export function PlayerProvider({ children }) {
             setHasRealAudioStarted(true);
             setIsLoading(false);
           }
-          setCurrentTime(audio.currentTime);
-          currentTimeRef.current = audio.currentTime;
+          // Strictly pause slider: only update currentTime if audio has verified started and is not paused/loading
+          if (hasRealAudioStartedRef.current && !audio.paused && !isLoadingRef.current) {
+            setCurrentTime(audio.currentTime);
+            currentTimeRef.current = audio.currentTime;
+          }
         }
       }
       if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity && !useDirectPlayer) {
@@ -887,6 +897,7 @@ export function PlayerProvider({ children }) {
     audio.addEventListener('playing', handlePlaying);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('waiting', handleWaiting);
+    audio.addEventListener('stalled', handleStalled);
     audio.addEventListener('canplay', handleCanPlay);
     audio.addEventListener('seeked', handleSeeked);
     audio.addEventListener('timeupdate', handleTimeUpdate);
@@ -899,6 +910,7 @@ export function PlayerProvider({ children }) {
       audio.removeEventListener('playing', handlePlaying);
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('waiting', handleWaiting);
+      audio.removeEventListener('stalled', handleStalled);
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('seeked', handleSeeked);
       audio.removeEventListener('timeupdate', handleTimeUpdate);

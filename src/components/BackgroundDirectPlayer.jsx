@@ -27,6 +27,7 @@ export default function BackgroundDirectPlayer() {
 
   const iframeRef = useRef(null);
   const playerReadyRef = useRef(false);
+  const ytPlayerStateRef = useRef(-1); // -1 = unstarted, 1 = playing, 2 = paused, 3 = buffering, 0 = ended
   const timerRef = useRef(null);
   const startSecRef = useRef(0);
   const currentTimeRef = useRef(0);
@@ -40,6 +41,7 @@ export default function BackgroundDirectPlayer() {
   useEffect(() => {
     // ALWAYS reset start position to 0 when a new song is loaded so it never starts at 4:00
     startSecRef.current = 0;
+    ytPlayerStateRef.current = -1;
   }, [currentTrack?.id]);
 
   function sendCommand(func, args = []) {
@@ -69,13 +71,13 @@ export default function BackgroundDirectPlayer() {
         if (document.hidden && (!isUserPausedRef || !isUserPausedRef.current)) {
           sendCommand('playVideo');
         }
-      }, 500);
+      }, 250);
     }
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [shouldBeActive, isPlaying]);
+  }, [shouldBeActive, isPlaying, isUserPausedRef]);
 
   // Handle Play / Pause commands
   useEffect(() => {
@@ -128,11 +130,15 @@ export default function BackgroundDirectPlayer() {
         }
         if (!data || typeof data !== 'object') return;
 
-        // State changes: 0 = ended, 1 = playing, 2 = paused, 3 = buffering
+        // State changes: -1 = unstarted, 0 = ended, 1 = playing, 2 = paused, 3 = buffering, 5 = cued
         if (data.event === 'onStateChange') {
+          ytPlayerStateRef.current = data.info;
           if (data.info === 1) {
             setIsPlaying(true);
             setIsLoading(false);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('harmoniq:direct-player-playing', { detail: currentTimeRef.current }));
+            }
           } else if (data.info === 2) {
             // Guard against unsolicited pauses caused by browser tab switching or background throttle
             if (isUserPausedRef && !isUserPausedRef.current && isPlaying) {
@@ -141,7 +147,7 @@ export default function BackgroundDirectPlayer() {
               return;
             }
             setIsPlaying(false);
-          } else if (data.info === 3) {
+          } else if (data.info === 3 || data.info === -1) {
             setIsLoading(true);
             if (typeof window !== 'undefined') {
               window.dispatchEvent(new CustomEvent('harmoniq:direct-player-buffering'));
@@ -159,6 +165,16 @@ export default function BackgroundDirectPlayer() {
             }
           }
         } else if (data.event === 'infoDelivery' && data.info) {
+          // If YouTube reports playerState in infoDelivery
+          if (typeof data.info.playerState === 'number') {
+            ytPlayerStateRef.current = data.info.playerState;
+            if (data.info.playerState === 3 || data.info.playerState === -1) {
+              setIsLoading(true);
+            } else if (data.info.playerState === 1) {
+              setIsLoading(false);
+            }
+          }
+
           // If YouTube reports ad state actively playing
           if (data.info.adState === 1 || data.info.isAdPlaying) {
             sendCommand('mute');
@@ -173,11 +189,20 @@ export default function BackgroundDirectPlayer() {
           }
 
           if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime) && data.info.currentTime >= 0) {
-            currentTimeRef.current = data.info.currentTime;
-            setCurrentTime(data.info.currentTime);
-            setIsLoading(false);
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('harmoniq:direct-player-playing', { detail: data.info.currentTime }));
+            // ONLY accept time updates and un-buffer when YouTube confirms it is actually playing (state 1)!
+            // If buffering (3), paused (2), or unstarted (-1), DO NOT advance or un-buffer the slider!
+            const isActuallyPlaying = ytPlayerStateRef.current === 1;
+
+            if (isActuallyPlaying) {
+              currentTimeRef.current = data.info.currentTime;
+              setCurrentTime(data.info.currentTime);
+              setIsLoading(false);
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('harmoniq:direct-player-playing', { detail: data.info.currentTime }));
+              }
+            } else if (data.info.currentTime === 0 && !isPlaying) {
+              currentTimeRef.current = 0;
+              setCurrentTime(0);
             }
           }
           if (typeof data.info.duration === 'number' && data.info.duration > 15 && isFinite(data.info.duration)) {

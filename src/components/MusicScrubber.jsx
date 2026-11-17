@@ -148,8 +148,8 @@ export default function MusicScrubber({
             style={{ width: `${progressPercent}%` }}
           />
 
-          {/* Buffering Shimmer when loading */}
-          {isInitialBuffering && (
+          {/* Buffering Shimmer when loading or stalled */}
+          {isLoading && (
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent animate-pulse pointer-events-none" />
           )}
         </div>

@@ -347,6 +347,11 @@ export default function DesktopPlayerBar() {
                 style={{ width: `${progressPercent}%` }}
               />
 
+              {/* Buffering Shimmer when loading or stalled */}
+              {isLoading && (
+                <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent animate-pulse pointer-events-none rounded-full" />
+              )}
+
               {/* Hover Position Preview Line */}
               {hoverScrubPercent !== null && (
                 <div
