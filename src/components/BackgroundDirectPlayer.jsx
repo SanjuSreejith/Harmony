@@ -127,11 +127,13 @@ export default function BackgroundDirectPlayer() {
         if (data.event === 'onStateChange') {
           if (data.info === 1) {
             setIsPlaying(true);
-            setIsLoading(false);
           } else if (data.info === 2) {
             setIsPlaying(false);
           } else if (data.info === 3) {
             setIsLoading(true);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('harmoniq:direct-player-buffering'));
+            }
           } else if (data.info === 0) {
             // Guard: Prevent premature skips if song just started
             const currentDur = (typeof currentTrack?.duration === 'number' && currentTrack.duration > 0) ? currentTrack.duration : 180;
@@ -145,16 +147,48 @@ export default function BackgroundDirectPlayer() {
             }
           }
         } else if (data.event === 'infoDelivery' && data.info) {
+          const trackExpectedDur = (typeof currentTrack?.duration === 'number' && currentTrack.duration > 0) ? currentTrack.duration : 180;
+          const reportedDur = typeof data.info.duration === 'number' ? data.info.duration : 0;
+
+          // Ad detection:
+          // Commercial pre-roll video ads on YouTube have short durations (< 45s) while real music tracks are > 55s
+          const isCommercialAd = Boolean(
+            data.info.adState === 1 ||
+            data.info.isAdPlaying ||
+            (reportedDur > 0 && reportedDur < 42 && trackExpectedDur > 55)
+          );
+
+          if (isCommercialAd) {
+            // Instantly mute commercial ad and fast-forward at 16x speed to finish in milliseconds
+            sendCommand('mute');
+            sendCommand('setPlaybackRate', [16]);
+            setIsLoading(true);
+            return;
+          }
+
+          // Real song is playing! Restore normal 1x playback speed and volume
+          if (data.info.playbackRate && data.info.playbackRate !== 1) {
+            sendCommand('setPlaybackRate', [1]);
+            if (!isMuted) {
+              sendCommand('unMute');
+              sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+            }
+          }
+
           if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime)) {
             currentTimeRef.current = data.info.currentTime;
             setCurrentTime(data.info.currentTime);
+            setIsLoading(false);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('harmoniq:direct-player-playing', { detail: data.info.currentTime }));
+            }
           }
-          if (typeof data.info.duration === 'number' && data.info.duration > 0 && isFinite(data.info.duration)) {
-            setDuration(data.info.duration);
+          if (reportedDur > 0 && isFinite(reportedDur)) {
+            setDuration(reportedDur);
           }
         } else if (data.event === 'initialDelivery') {
           playerReadyRef.current = true;
-          setIsLoading(false);
+          // Keep loading spinner active until audio frames actually start playing
           sendCommand('unMute');
           sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
           const target = startSecRef.current || 0;
@@ -168,18 +202,22 @@ export default function BackgroundDirectPlayer() {
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [shouldBeActive, handleTrackEnded, isPlaying]);
+  }, [shouldBeActive, handleTrackEnded, isPlaying, isMuted, volume, currentTrack?.duration]);
 
   // Keep background audio active when tab is minimized or screen is locked
   useEffect(() => {
     function handleVisibilityChange() {
-      if (document.hidden && shouldBeActive && isPlaying) {
+      if (shouldBeActive && isPlaying) {
         // Prevent browser from throttling or pausing audio upon minimize
         sendCommand('playVideo');
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handleVisibilityChange);
+    };
   }, [shouldBeActive, isPlaying]);
 
   if (!shouldBeActive || !currentTrack) return null;
@@ -193,13 +231,13 @@ export default function BackgroundDirectPlayer() {
     <div
       style={{
         position: 'fixed',
-        bottom: 0,
-        right: 0,
-        width: 1,
-        height: 1,
-        opacity: 0.01,
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        opacity: 0.001,
         pointerEvents: 'none',
-        zIndex: -10,
+        zIndex: -1,
         overflow: 'hidden'
       }}
       aria-hidden="true"

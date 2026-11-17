@@ -590,6 +590,7 @@ export default function NowPlaying() {
             currentTime={currentTime}
             duration={duration > 0 ? duration : (currentTrack?.duration > 0 ? currentTrack.duration : 180)}
             buffered={buffered}
+            isLoading={isLoading}
             onSeek={(targetTime) => {
               seekTo(targetTime);
               videoCurrentTimeRef.current = targetTime;

@@ -5,6 +5,7 @@ export default function MusicScrubber({
   currentTime = 0,
   duration = 0,
   buffered = 0,
+  isLoading = false,
   onSeek
 }) {
   const [isDragging, setIsDragging] = useState(false);
@@ -16,8 +17,15 @@ export default function MusicScrubber({
 
   // Fallback to reasonable 3-minute duration if metadata not yet resolved so scrubber is always interactive
   const safeDuration = (typeof duration === 'number' && duration > 0 && isFinite(duration)) ? duration : 180;
-  const displayTime = isDragging ? dragValue : (typeof currentTime === 'number' && isFinite(currentTime) ? currentTime : 0);
-  const progressPercent = safeDuration > 0 ? Math.min(100, Math.max(0, (displayTime / safeDuration) * 100)) : 0;
+  
+  // Guard: If track is loading and hasn't started playing, strictly lock display time to 0
+  const isInitialBuffering = isLoading && (!currentTime || currentTime < 1);
+  const displayTime = isDragging 
+    ? dragValue 
+    : (isInitialBuffering ? 0 : (typeof currentTime === 'number' && isFinite(currentTime) ? currentTime : 0));
+  const progressPercent = (safeDuration > 0 && !isInitialBuffering) 
+    ? Math.min(100, Math.max(0, (displayTime / safeDuration) * 100)) 
+    : 0;
   const safeBuffered = (typeof buffered === 'number' && isFinite(buffered)) ? buffered : 0;
   const bufferPercent = Math.min(100, Math.max(0, safeBuffered));
 
@@ -139,6 +147,11 @@ export default function MusicScrubber({
             }`}
             style={{ width: `${progressPercent}%` }}
           />
+
+          {/* Buffering Shimmer when loading */}
+          {isInitialBuffering && (
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent animate-pulse pointer-events-none" />
+          )}
         </div>
 
         {/* Scrubber Knob Thumb - Always sleekly visible, magnifies on drag/hover */}

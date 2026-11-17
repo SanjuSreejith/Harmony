@@ -92,8 +92,13 @@ export default function DesktopPlayerBar() {
     ? duration
     : (currentTrack.duration > 0 ? currentTrack.duration : 180);
 
-  const displayTime = isScrubbing ? scrubValue : (typeof currentTime === 'number' && isFinite(currentTime) ? currentTime : 0);
-  const progressPercent = safeDuration > 0 ? Math.min(100, Math.max(0, (displayTime / safeDuration) * 100)) : 0;
+  const isInitialBuffering = isLoading && (!currentTime || currentTime < 1);
+  const displayTime = isScrubbing 
+    ? scrubValue 
+    : (isInitialBuffering ? 0 : (typeof currentTime === 'number' && isFinite(currentTime) ? currentTime : 0));
+  const progressPercent = (safeDuration > 0 && !isInitialBuffering) 
+    ? Math.min(100, Math.max(0, (displayTime / safeDuration) * 100)) 
+    : 0;
   const safeBuffered = (typeof buffered === 'number' && isFinite(buffered)) ? buffered : 0;
   const bufferPercent = Math.min(100, Math.max(0, safeBuffered));
 

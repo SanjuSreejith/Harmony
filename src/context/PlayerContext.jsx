@@ -44,6 +44,9 @@ import {
 
 const PlayerContext = createContext(null);
 
+// Continuous 1-second silent WAV base64 loop to maintain Android/iOS media focus & background wake lock
+const SILENT_AUDIO_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
 export function PlayerProvider({ children }) {
   const audioRef = useRef(null);
   const pendingSeekRef = useRef(null);
@@ -51,6 +54,8 @@ export function PlayerProvider({ children }) {
   const audioSourceRef = useRef(null);
   const bassFilterRef = useRef(null);
   const trebleFilterRef = useRef(null);
+  const hasRealAudioStartedRef = useRef(false);
+  const [hasRealAudioStarted, setHasRealAudioStarted] = useState(false);
 
   // Playback state with persistent session resume
   const [currentTrack, setCurrentTrack] = useState(() => {
@@ -469,6 +474,66 @@ export function PlayerProvider({ children }) {
     }
   }, [isPlaying, currentTrack?.id, currentTrack?.title, currentTrack?.thumbnail]);
 
+  // Mobile background audio wake-lock keepalive:
+  // When useDirectPlayer is active, mobile browsers suspend the tab on minimize unless
+  // a top-level HTML5 <audio> element is actively playing audio with a MediaSession.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (useDirectPlayer && isPlaying) {
+      if (audio.src !== SILENT_AUDIO_URI) {
+        audio.src = SILENT_AUDIO_URI;
+        audio.loop = true;
+      }
+      audio.play().catch(() => {});
+    } else if (useDirectPlayer && !isPlaying) {
+      audio.pause();
+    }
+  }, [useDirectPlayer, isPlaying]);
+
+  // Screen WakeLock for continuous background playback
+  useEffect(() => {
+    let wakeLock = null;
+    async function requestWake() {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && isPlaying) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+        } catch (e) {}
+      }
+    }
+    if (isPlaying) {
+      requestWake();
+    }
+    return () => {
+      if (wakeLock && wakeLock.release) {
+        try { wakeLock.release(); } catch (e) {}
+      }
+    };
+  }, [isPlaying]);
+
+  // Synchronize events from Direct Player (playing / buffering)
+  useEffect(() => {
+    function onDirectPlayerPlaying(e) {
+      hasRealAudioStartedRef.current = true;
+      setHasRealAudioStarted(true);
+      setIsLoading(false);
+      if (typeof e.detail === 'number' && isFinite(e.detail) && e.detail > 0) {
+        currentTimeRef.current = e.detail;
+        setCurrentTimeState(e.detail);
+      }
+    }
+    function onDirectPlayerBuffering() {
+      setIsLoading(true);
+    }
+    window.addEventListener('harmoniq:direct-player-playing', onDirectPlayerPlaying);
+    window.addEventListener('harmoniq:direct-player-buffering', onDirectPlayerBuffering);
+    return () => {
+      window.removeEventListener('harmoniq:direct-player-playing', onDirectPlayerPlaying);
+      window.removeEventListener('harmoniq:direct-player-buffering', onDirectPlayerBuffering);
+    };
+  }, []);
+
   // Master live playback heartbeat for accurate timeline sync across ALL playback engines
   useEffect(() => {
     // Strictly don't tick or advance the scrubber while song is still loading or paused
@@ -491,17 +556,22 @@ export function PlayerProvider({ children }) {
         // 1. If HTML5 audio element has an active stream playing
         if (audio && !audio.paused && !isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
           cur = audio.currentTime;
+          hasRealAudioStartedRef.current = true;
           if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity) {
             durationRef.current = audio.duration;
             setDuration(audio.duration);
           }
         } else if (useDirectPlayer) {
-          // 2. Direct player active: only advance timer if actually playing (not loading/buffering)
-          const prev = currentTimeRef.current || 0;
-          cur = prev + deltaSec;
+          // 2. Direct player active: only advance timer if real song has confirmed started
+          if (hasRealAudioStartedRef.current && !isLoading) {
+            const prev = currentTimeRef.current || 0;
+            cur = prev + deltaSec;
+          } else {
+            cur = (typeof pendingSeekRef.current === 'number' && pendingSeekRef.current > 0) ? pendingSeekRef.current : 0;
+          }
         } else {
           // HTML5 audio is loading/buffering or not yet playing: do NOT advance timer artificially
-          cur = currentTimeRef.current || 0;
+          cur = (typeof pendingSeekRef.current === 'number' && pendingSeekRef.current > 0) ? pendingSeekRef.current : (currentTimeRef.current || 0);
         }
 
         const dur = durationRef.current || (currentTrackRef.current?.duration > 0 ? currentTrackRef.current.duration : 180);
@@ -619,13 +689,18 @@ export function PlayerProvider({ children }) {
     };
     const handleWaiting = () => setIsLoading(true);
     const handleCanPlay = () => {
-      setIsLoading(false);
       if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
         try {
           audio.currentTime = pendingSeekRef.current;
         } catch (e) {}
         pendingSeekRef.current = null;
       }
+    };
+    const handlePlaying = () => {
+      hasRealAudioStartedRef.current = true;
+      setHasRealAudioStarted(true);
+      setIsLoading(false);
+      setIsPlaying(true);
     };
     const handleSeeked = () => {
       pendingSeekRef.current = null;
@@ -636,21 +711,26 @@ export function PlayerProvider({ children }) {
     };
     
     const handleTimeUpdate = () => {
-      if (typeof audio.currentTime === 'number' && isFinite(audio.currentTime)) {
+      if (typeof audio.currentTime === 'number' && isFinite(audio.currentTime) && !useDirectPlayer) {
         if (!isVideoModeRef.current) {
           // Ignore transient stale updates while a seek is landing
           if (pendingSeekRef.current !== null && Math.abs(audio.currentTime - pendingSeekRef.current) > 2) {
             return;
           }
+          if (audio.currentTime > 0.05 && !hasRealAudioStartedRef.current) {
+            hasRealAudioStartedRef.current = true;
+            setHasRealAudioStarted(true);
+            setIsLoading(false);
+          }
           setCurrentTime(audio.currentTime);
           currentTimeRef.current = audio.currentTime;
         }
       }
-      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity) {
+      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity && !useDirectPlayer) {
         setDuration(audio.duration);
       }
       try {
-        if (audio.buffered && audio.buffered.length > 0) {
+        if (audio.buffered && audio.buffered.length > 0 && !useDirectPlayer) {
           const end = audio.buffered.end(audio.buffered.length - 1);
           const totalDur = (audio.duration && isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 1;
           setBuffered((end / totalDur) * 100);
@@ -659,7 +739,7 @@ export function PlayerProvider({ children }) {
       updatePositionState();
 
       // Record listening telemetry & affinity tracking (discounted priority if track was autoplayed)
-      if (currentTrackRef.current) {
+      if (currentTrackRef.current && !useDirectPlayer) {
         recordListeningProgress(currentTrackRef.current, audio.currentTime, audio.duration || 0, isAutoplayRef.current);
 
         // Reinforcement Learning reward milestones
@@ -677,16 +757,15 @@ export function PlayerProvider({ children }) {
       }
 
       // Pre-warm next song for zero-latency gapless transitions (> 80%)
-      if (audio.duration > 0 && audio.currentTime / audio.duration > 0.8) {
+      if (audio.duration > 0 && audio.currentTime / audio.duration > 0.8 && !useDirectPlayer) {
         checkPrewarmNext();
       }
     };
 
     const handleLoadedMetadata = () => {
-      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity) {
+      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity && !useDirectPlayer) {
         setDuration(audio.duration);
       }
-      setIsLoading(false);
       updatePositionState();
       if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
         try {
@@ -706,18 +785,18 @@ export function PlayerProvider({ children }) {
       console.warn('[Audio Error on HTML5 audio element]', e);
       if (currentTrackRef.current) {
         // If HTML5 audio stream fails (e.g. Render 500 error or PC connection drop),
-        // seamlessly switch to BackgroundDirectPlayer for 100% reliable zero-error playback!
-        console.log('[Player] Server stream error. Seamlessly switching to Direct Player!');
+        // seamlessly switch to BackgroundDirectPlayer with mobile background audio keepalive
+        console.log('[Player] Server stream error. Seamlessly switching to Direct Player with background wake-lock!');
         if (audioRef.current) {
           try {
-            audioRef.current.pause();
-            audioRef.current.removeAttribute('src');
-            audioRef.current.load();
+            audioRef.current.src = SILENT_AUDIO_URI;
+            audioRef.current.loop = true;
+            audioRef.current.play().catch(() => {});
           } catch (err) {}
         }
         setUseDirectPlayer(true);
         setIsPlaying(true);
-        setIsLoading(false);
+        setIsLoading(true);
         showToast('Connecting direct cloud audio stream...', 'info');
         return;
       }
@@ -726,6 +805,7 @@ export function PlayerProvider({ children }) {
     };
 
     audio.addEventListener('play', handlePlay);
+    audio.addEventListener('playing', handlePlaying);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('waiting', handleWaiting);
     audio.addEventListener('canplay', handleCanPlay);
@@ -737,6 +817,7 @@ export function PlayerProvider({ children }) {
 
     return () => {
       audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('playing', handlePlaying);
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('waiting', handleWaiting);
       audio.removeEventListener('canplay', handleCanPlay);
@@ -865,13 +946,14 @@ export function PlayerProvider({ children }) {
 
   function updatePositionState() {
     if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-      const audio = audioRef.current;
-      if (audio && audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+      const cur = currentTimeRef.current || 0;
+      const dur = durationRef.current || (currentTrackRef.current?.duration > 0 ? currentTrackRef.current.duration : 180);
+      if (dur > 0 && isFinite(dur) && isFinite(cur)) {
         try {
           navigator.mediaSession.setPositionState({
-            duration: audio.duration,
-            playbackRate: audio.playbackRate || 1.0,
-            position: Math.min(audio.currentTime, audio.duration)
+            duration: Math.max(1, dur),
+            playbackRate: 1.0,
+            position: Math.min(Math.max(0, cur), dur)
           });
         } catch (e) {}
       }
@@ -910,6 +992,8 @@ export function PlayerProvider({ children }) {
       }
 
       isAutoplayRef.current = Boolean(isAutoplay);
+      hasRealAudioStartedRef.current = false;
+      setHasRealAudioStarted(false);
       setPlaybackError(null);
       setCurrentTrack(track);
       setIsLoading(true);
@@ -1108,14 +1192,14 @@ export function PlayerProvider({ children }) {
           console.log('[Player] Falling back to direct player engine for track:', track.id);
           if (audio) {
             try {
-              audio.pause();
-              audio.removeAttribute('src');
-              audio.load();
+              audio.src = SILENT_AUDIO_URI;
+              audio.loop = true;
+              audio.play().catch(() => {});
             } catch (e) {}
           }
           setUseDirectPlayer(true);
           setIsPlaying(true);
-          setIsLoading(false);
+          setIsLoading(true);
           showToast('Connecting direct cloud audio stream...', 'info');
           return;
         }
@@ -1282,7 +1366,7 @@ export function PlayerProvider({ children }) {
     }
 
     const audio = audioRef.current;
-    if (audio) {
+    if (audio && !useDirectPlayer) {
       try {
         if (audio.readyState >= 1) {
           audio.currentTime = safeSec;
@@ -1331,8 +1415,8 @@ export function PlayerProvider({ children }) {
       pauseNativeStream().catch(() => {});
     }
     const audio = audioRef.current;
-    if (audio) {
-      if (!isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
+    if (audio && !useDirectPlayer) {
+      if (!isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0 && !useDirectPlayer) {
         currentTimeRef.current = audio.currentTime;
         setCurrentTime(audio.currentTime);
       }
@@ -1387,6 +1471,13 @@ export function PlayerProvider({ children }) {
 
     if (useDirectPlayer) {
       setIsPlaying(true);
+      if (audio) {
+        if (audio.src !== SILENT_AUDIO_URI) {
+          audio.src = SILENT_AUDIO_URI;
+          audio.loop = true;
+        }
+        audio.play().catch(() => {});
+      }
       return;
     }
 
@@ -1459,7 +1550,7 @@ export function PlayerProvider({ children }) {
     }
 
     const audio = audioRef.current;
-    if (audio) {
+    if (audio && !useDirectPlayer) {
       try {
         if (audio.readyState >= 1) {
           audio.currentTime = safeTime;
@@ -1819,6 +1910,7 @@ export function PlayerProvider({ children }) {
         duration,
         buffered,
         isLoading,
+        hasRealAudioStarted,
         playbackError,
         queue,
         queueIndex,
