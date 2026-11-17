@@ -21,9 +21,13 @@ import {
   VolumeX,
   Maximize2,
   Music,
-  Loader2
+  Loader2,
+  Cloud,
+  Laptop,
+  Settings
 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import { getServerSelection, setServerSelection, SERVER_MODES } from '../services/api';
 import AddToPlaylistModal from './AddToPlaylistModal';
 
 export default function DesktopPlayerBar() {
@@ -56,14 +60,31 @@ export default function DesktopPlayerBar() {
     setVolume,
     isMuted,
     toggleMute,
-    audioQuality
+    audioQuality,
+    setShowSettingsModal
   } = usePlayer();
 
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubValue, setScrubValue] = useState(0);
   const [hoverScrubPercent, setHoverScrubPercent] = useState(null);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+  const [serverMode, setServerMode] = useState(() => getServerSelection().mode);
   const progressBarRef = useRef(null);
+
+  useEffect(() => {
+    function onServerModeChanged(e) {
+      if (e.detail) setServerMode(e.detail);
+    }
+    window.addEventListener('harmoniq:server-mode-changed', onServerModeChanged);
+    return () => window.removeEventListener('harmoniq:server-mode-changed', onServerModeChanged);
+  }, []);
+
+  function handleQuickToggleServer() {
+    const nextMode = serverMode === SERVER_MODES.CLOUD ? SERVER_MODES.AUTO : SERVER_MODES.CLOUD;
+    setServerSelection(nextMode);
+    setServerMode(nextMode);
+    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: nextMode }));
+  }
 
   if (!currentTrack) return null;
 
@@ -410,6 +431,33 @@ export default function DesktopPlayerBar() {
               />
             </div>
           </div>
+
+          {/* Settings Trigger */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            title="App Settings & Audio Options"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+
+          {/* Quick Server Switcher Button */}
+          <button
+            onClick={handleQuickToggleServer}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+              serverMode === SERVER_MODES.CLOUD
+                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/25'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+            }`}
+            title="Switch Audio Server between 24/7 Cloud and Local PC"
+          >
+            {serverMode === SERVER_MODES.CLOUD ? (
+              <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+            ) : (
+              <Laptop className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+            <span>{serverMode === SERVER_MODES.CLOUD ? 'Cloud' : (serverMode === SERVER_MODES.AUTO ? 'Auto' : 'PC')}</span>
+          </button>
 
           {/* Fullscreen Modal Expander */}
           <button

@@ -293,11 +293,11 @@ export default function SettingsModal() {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
       onClick={() => setShowSettingsModal(false)}
     >
       <div
-        className="w-full max-w-sm max-h-[88vh] bg-slate-900 border border-white/10 rounded-3xl p-5 shadow-2xl flex flex-col safe-bottom"
+        className="w-full max-w-lg md:max-w-xl max-h-[92vh] bg-slate-900 border border-white/10 rounded-3xl p-5 md:p-6 shadow-2xl flex flex-col safe-bottom"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -789,6 +789,7 @@ export default function SettingsModal() {
                     setServerMode(SERVER_MODES.USB);
                     setBackendIp(PC_USB_SERVER);
                     handleTestServer(PC_USB_SERVER);
+                    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: SERVER_MODES.USB }));
                     showNotification('Pinned to PC USB Cable (10.210.177.65) ⚡');
                   }}
                   className={`p-2 rounded-xl border text-[10px] font-semibold flex flex-col items-center justify-center gap-1 transition-all ${
@@ -810,6 +811,7 @@ export default function SettingsModal() {
                     setServerMode(SERVER_MODES.WIFI);
                     setBackendIp(PC_WIFI_SERVER);
                     handleTestServer(PC_WIFI_SERVER);
+                    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: SERVER_MODES.WIFI }));
                     showNotification('Pinned to PC Wi-Fi (10.128.89.220) 📶');
                   }}
                   className={`p-2 rounded-xl border text-[10px] font-semibold flex flex-col items-center justify-center gap-1 transition-all ${
@@ -831,6 +833,7 @@ export default function SettingsModal() {
                     setServerMode(SERVER_MODES.CLOUD);
                     setBackendIp(CLOUD_FALLBACK_SERVER);
                     handleTestServer(CLOUD_FALLBACK_SERVER);
+                    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: SERVER_MODES.CLOUD }));
                     showNotification('Pinned to 24/7 Cloud Server ☁️ (Plays anywhere)');
                   }}
                   className={`p-2 rounded-xl border text-[10px] font-semibold flex flex-col items-center justify-center gap-1 transition-all ${
@@ -852,6 +855,7 @@ export default function SettingsModal() {
                     setServerMode(SERVER_MODES.AUTO);
                     setBackendIp('');
                     handleTestServer();
+                    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: SERVER_MODES.AUTO }));
                     showNotification('Auto-Switch: PC at home ⚡, Cloud outdoors ☁️');
                   }}
                   className={`p-2 rounded-xl border text-[10px] font-semibold flex flex-col items-center justify-center gap-1 transition-all ${

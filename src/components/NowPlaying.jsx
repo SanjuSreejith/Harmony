@@ -22,9 +22,12 @@ import {
   Loader2,
   Sliders,
   Gauge,
-  Music
+  Music,
+  Cloud,
+  Laptop
 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import { getServerSelection, setServerSelection, SERVER_MODES } from '../services/api';
 import LyricsView from './LyricsView';
 import AudioVisualizer from './AudioVisualizer';
 import AddToPlaylistModal from './AddToPlaylistModal';
@@ -89,6 +92,23 @@ export default function NowPlaying() {
   const [seekValue, setSeekValue] = useState(0);
   const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
   const [showSoundControls, setShowSoundControls] = useState(false);
+  const [serverMode, setServerMode] = useState(() => getServerSelection().mode);
+
+  useEffect(() => {
+    function onServerModeChanged(e) {
+      if (e.detail) setServerMode(e.detail);
+    }
+    window.addEventListener('harmoniq:server-mode-changed', onServerModeChanged);
+    return () => window.removeEventListener('harmoniq:server-mode-changed', onServerModeChanged);
+  }, []);
+
+  function handleQuickToggleServer(e) {
+    e.stopPropagation();
+    const nextMode = serverMode === SERVER_MODES.CLOUD ? SERVER_MODES.AUTO : SERVER_MODES.CLOUD;
+    setServerSelection(nextMode);
+    setServerMode(nextMode);
+    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: nextMode }));
+  }
 
   // Swipe gesture state
   const touchStartX = useRef(0);
@@ -412,13 +432,32 @@ export default function NowPlaying() {
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 pointer-events-none"
               />
 
-              {/* Quality & Offline Badge */}
-              <div
-                onClick={() => setShowSettingsModal(true)}
-                className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-semibold text-emerald-400 border border-emerald-500/30 cursor-pointer flex items-center gap-1"
-              >
-                <span>{qualityBadge}</span>
-                {downloaded && <span className="text-cyan-300">• Offline</span>}
+              {/* Quality, Server & Offline Badges */}
+              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+                <div
+                  onClick={() => setShowSettingsModal(true)}
+                  className="bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-semibold text-emerald-400 border border-emerald-500/30 cursor-pointer pointer-events-auto flex items-center gap-1 hover:bg-black/80 transition-colors"
+                >
+                  <span>{qualityBadge}</span>
+                  {downloaded && <span className="text-cyan-300">• Offline</span>}
+                </div>
+
+                <button
+                  onClick={handleQuickToggleServer}
+                  className={`pointer-events-auto flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold backdrop-blur-md border transition-all active:scale-95 shadow-md ${
+                    serverMode === SERVER_MODES.CLOUD
+                      ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40 hover:bg-cyan-900/80'
+                      : 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/80'
+                  }`}
+                  title="Switch between 24/7 Cloud Server and PC Server"
+                >
+                  {serverMode === SERVER_MODES.CLOUD ? (
+                    <Cloud className="w-3 h-3 text-cyan-400" />
+                  ) : (
+                    <Laptop className="w-3 h-3 text-emerald-400" />
+                  )}
+                  <span>{serverMode === SERVER_MODES.CLOUD ? 'Cloud' : (serverMode === SERVER_MODES.AUTO ? 'Auto' : 'PC')}</span>
+                </button>
               </div>
             </div>
 

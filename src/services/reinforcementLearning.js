@@ -58,41 +58,46 @@ export function extractTrackVector(track) {
     let danceability = 0.50;
     let valence = 0.60;
 
-    if (genre === 'Dance & Beats' || /remix|party|club|edm|dj|bass|dhamaka/i.test(title)) {
+    if (genre === 'Dance & Beats' || /remix|party|club|edm|dj|bass|dhamaka|kuthu|dance/i.test(title)) {
       energy = 0.92;
       acousticness = 0.12;
       danceability = 0.90;
       valence = 0.85;
-    } else if (genre === 'Devotional & Bhakti' || /bhajan|aarti|shiva|ram|krishna|mantra|divine/i.test(title)) {
+    } else if (genre === 'Devotional & Bhakti' || /bhajan|aarti|shiva|ram|krishna|mantra|divine|ayyappa|keerthanam/i.test(title)) {
       energy = 0.45;
       acousticness = 0.78;
       danceability = 0.35;
       valence = 0.75;
-    } else if (genre === 'Lo-Fi' || /lofi|lo-fi|chillhop|slowed|reverb/i.test(title)) {
+    } else if (genre === 'Lo-Fi' || /lofi|lo-fi|chillhop|slowed|reverb|ambient|sleep/i.test(title)) {
       energy = 0.28;
       acousticness = 0.82;
       danceability = 0.40;
       valence = 0.50;
-    } else if (genre === 'Acoustic' || /unplugged|acoustic|piano|guitar/i.test(title)) {
+    } else if (genre === 'Acoustic' || /unplugged|acoustic|piano|guitar|instrumental/i.test(title)) {
       energy = 0.35;
       acousticness = 0.92;
       danceability = 0.38;
       valence = 0.62;
-    } else if (genre === 'Hip-Hop & Rap' || /rap|hiphop|drill|trap/i.test(title)) {
+    } else if (genre === 'Hip-Hop & Rap' || /rap|hiphop|drill|trap|freestyle/i.test(title)) {
       energy = 0.85;
       acousticness = 0.20;
       danceability = 0.82;
       valence = 0.65;
-    } else if (genre === 'Sad & Soulful' || /sad|heartbreak|dard|alone|broken/i.test(title)) {
+    } else if (genre === 'Sad & Soulful' || /sad|heartbreak|dard|alone|broken|pain|tears/i.test(title)) {
       energy = 0.30;
       acousticness = 0.75;
       danceability = 0.25;
       valence = 0.22;
-    } else if (genre === 'Romantic' || /love|dil|pyaar|ishq|mohabbat/i.test(title)) {
+    } else if (genre === 'Romantic' || /love|dil|pyaar|ishq|mohabbat|melody|kaadhal|premam/i.test(title)) {
       energy = 0.50;
       acousticness = 0.65;
       danceability = 0.55;
       valence = 0.70;
+    } else if (/mass|action|bgm|theme|entry|climax|power|hype/i.test(title)) {
+      energy = 0.95;
+      acousticness = 0.10;
+      danceability = 0.75;
+      valence = 0.80;
     }
 
     return [energy, acousticness, danceability, valence];
@@ -369,6 +374,23 @@ export function scoreTrackWithBandit(track, model, context = {}) {
     const userCentroid = context.tasteCentroid || computeUserTasteCentroid(context.recentTracks || []);
     const cosineSim = cosineSimilarity(trackVector, userCentroid);
 
+    // 6b. Tempo & Time-of-Day Rhythm Alignment (Morning energizers, afternoon beats, midnight lo-fi)
+    let circadianBonus = 0;
+    const hour = new Date().getHours();
+    const trackEnergy = trackVector[0];
+    const trackAcoustic = trackVector[1];
+    if (hour >= 23 || hour < 6) {
+      // Late night / sleep hours: favor acoustic / lo-fi / calm
+      if (trackAcoustic > 0.65) circadianBonus += 0.45;
+      if (trackEnergy > 0.8) circadianBonus -= 0.35;
+    } else if (hour >= 6 && hour < 10) {
+      // Morning: fresh melodies, devotional or upbeat starters
+      if (trackVector[3] > 0.6) circadianBonus += 0.35;
+    } else if (hour >= 18 && hour < 22) {
+      // Evening / Night Drive / Chill:
+      if (trackEnergy > 0.55 && trackVector[2] > 0.5) circadianBonus += 0.35;
+    }
+
     // 7. Cross-Lingual Composer Transfer Bonus:
     const crossLingualBonus = getCrossLingualAffinityBonus(track, context.topArtists || []);
 
@@ -394,6 +416,7 @@ export function scoreTrackWithBandit(track, model, context = {}) {
       0.20 * ucbGenre +
       0.15 * cosineSim +
       0.10 * qCtx +
+      circadianBonus +
       langMatchBonus +
       crossLingualBonus +
       recencyBonus +

@@ -48,6 +48,7 @@ export function PlayerProvider({ children }) {
   const audioRef = useRef(null);
   const pendingSeekRef = useRef(null);
   const audioCtxRef = useRef(null);
+  const audioSourceRef = useRef(null);
   const bassFilterRef = useRef(null);
   const trebleFilterRef = useRef(null);
 
@@ -681,10 +682,16 @@ export function PlayerProvider({ children }) {
     };
   }, []);
 
-  // Web Audio API Equalizer Filter setup
+  // Web Audio API Equalizer Filter setup - safe, non-destructive without audio cuts
   function applyEqualizerPreset(preset) {
     if (!preset || preset === 'flat') {
-      if (!audioCtxRef.current) return;
+      if (bassFilterRef.current && trebleFilterRef.current) {
+        try {
+          bassFilterRef.current.gain.value = 0;
+          trebleFilterRef.current.gain.value = 0;
+        } catch (e) {}
+      }
+      return;
     }
 
     if (!audioCtxRef.current && audioRef.current && preset && preset !== 'flat') {
@@ -697,7 +704,10 @@ export function PlayerProvider({ children }) {
           ctx.resume().catch(() => {});
         }
 
-        const source = ctx.createMediaElementSource(audioRef.current);
+        if (!audioSourceRef.current) {
+          audioSourceRef.current = ctx.createMediaElementSource(audioRef.current);
+        }
+        const source = audioSourceRef.current;
         const bassFilter = ctx.createBiquadFilter();
         bassFilter.type = 'lowshelf';
         bassFilter.frequency.value = 200;
@@ -713,27 +723,29 @@ export function PlayerProvider({ children }) {
         bassFilterRef.current = bassFilter;
         trebleFilterRef.current = trebleFilter;
       } catch (e) {
-        // Ignored if browser restricts until user gesture
+        // Silently catch in case browser restrictions apply or already connected
       }
     }
 
     if (bassFilterRef.current && trebleFilterRef.current) {
-      if (preset === 'bass') {
-        bassFilterRef.current.gain.value = 8;
-        trebleFilterRef.current.gain.value = 0;
-      } else if (preset === 'vocal') {
-        bassFilterRef.current.gain.value = -3;
-        trebleFilterRef.current.gain.value = 4;
-      } else if (preset === 'treble') {
-        bassFilterRef.current.gain.value = 0;
-        trebleFilterRef.current.gain.value = 7;
-      } else if (preset === 'electronic') {
-        bassFilterRef.current.gain.value = 6;
-        trebleFilterRef.current.gain.value = 5;
-      } else {
-        bassFilterRef.current.gain.value = 0;
-        trebleFilterRef.current.gain.value = 0;
-      }
+      try {
+        if (preset === 'bass') {
+          bassFilterRef.current.gain.value = 8;
+          trebleFilterRef.current.gain.value = 0;
+        } else if (preset === 'vocal') {
+          bassFilterRef.current.gain.value = -3;
+          trebleFilterRef.current.gain.value = 4;
+        } else if (preset === 'treble') {
+          bassFilterRef.current.gain.value = 0;
+          trebleFilterRef.current.gain.value = 7;
+        } else if (preset === 'electronic') {
+          bassFilterRef.current.gain.value = 6;
+          trebleFilterRef.current.gain.value = 5;
+        } else {
+          bassFilterRef.current.gain.value = 0;
+          trebleFilterRef.current.gain.value = 0;
+        }
+      } catch (e) {}
     }
   }
 
