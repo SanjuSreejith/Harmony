@@ -1031,20 +1031,9 @@ export function PlayerProvider({ children }) {
       // Check if this stream is directed to the Render cloud server
       const isCloudStream = Boolean(streamUrl && streamUrl.includes('onrender.com'));
       if (isCloudStream) {
-        // Render's datacenter IP is restricted from extracting direct audio streams by YouTube.
-        // Immediately activate the zero-error Direct Player engine for flawless cloud playback!
-        console.log('[Player] Cloud mode: activating direct player engine for track:', track.id);
-        if (audioRef.current) {
-          try {
-            audioRef.current.pause();
-            audioRef.current.removeAttribute('src');
-            audioRef.current.load();
-          } catch (e) {}
-        }
-        setUseDirectPlayer(true);
-        setIsPlaying(true);
-        setIsLoading(false);
-        return;
+        // Attempt clean HTML5 audio playback first via server stream.
+        // Only if HTML5 audio fails with an error will the fallback player take over.
+        console.log('[Player] Attempting ad-free direct audio stream from server:', streamUrl);
       }
 
       // If running on native Android with a valid stream URL (PC server or local proxy):

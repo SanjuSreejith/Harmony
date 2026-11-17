@@ -90,14 +90,20 @@ async function getInnertube() {
 
   ytInitPromise = (async () => {
     try {
-      console.log('[Musicit] Initializing YouTube client engine (VISIONOS)...');
-      ytClient = await Innertube.create({ client_type: ClientType.VISIONOS });
+      console.log('[Musicit] Initializing YouTube client engine (IOS)...');
+      ytClient = await Innertube.create({ client_type: ClientType.IOS });
       console.log('[Musicit] YouTube client initialized successfully!');
       return ytClient;
     } catch (err) {
-      console.error('[Musicit] Failed to init Innertube:', err.message);
-      ytInitPromise = null;
-      throw err;
+      console.error('[Musicit] Failed to init Innertube with IOS client:', err.message);
+      try {
+        console.log('[Musicit] Fallback: Initializing with MWEB client...');
+        ytClient = await Innertube.create({ client_type: ClientType.MWEB });
+        return ytClient;
+      } catch (fallbackErr) {
+        ytInitPromise = null;
+        throw fallbackErr;
+      }
     }
   })();
 
