@@ -15,7 +15,62 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Initialize YouTube Innertube client with VISIONOS client type (unthrottled, unblocked DASH streams)
+// High-performance In-Memory Response Caches for Cloud (Instant sub-100ms loads)
+const searchCache = new Map(); // query -> { data, timestamp }
+const trendingCache = new Map(); // key -> { data, timestamp }
+const recsCache = new Map(); // key -> { data, timestamp }
+const subQueryCache = new Map(); // query -> { data, timestamp }
+
+const CACHE_TTL_SEARCH = 1000 * 60 * 30; // 30 mins
+const CACHE_TTL_TRENDING = 1000 * 60 * 60 * 2; // 2 hours
+const CACHE_TTL_RECS = 1000 * 60 * 45; // 45 mins
+const CACHE_TTL_SUBQUERY = 1000 * 60 * 60 * 2; // 2 hours
+
+// Fast timeout-guarded search with subquery memoization
+async function fastYtSearch(query, timeoutMs = 4000) {
+  if (!query || !query.trim()) return [];
+  const cacheKey = query.trim().toLowerCase();
+  if (subQueryCache.has(cacheKey)) {
+    const entry = subQueryCache.get(cacheKey);
+    if (Date.now() - entry.timestamp < CACHE_TTL_SUBQUERY) {
+      return entry.data;
+    }
+  }
+
+  try {
+    const searchPromise = ytSearch(query).then(r => r.videos || []).catch(() => []);
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve([]), timeoutMs));
+    const videos = await Promise.race([searchPromise, timeoutPromise]);
+
+    if (videos && videos.length > 0) {
+      if (subQueryCache.size > 300) {
+        const oldest = subQueryCache.keys().next().value;
+        subQueryCache.delete(oldest);
+      }
+      subQueryCache.set(cacheKey, { data: videos, timestamp: Date.now() });
+    }
+    return videos;
+  } catch (err) {
+    return [];
+  }
+}
+
+// Clean up old cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of searchCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL_SEARCH) searchCache.delete(k);
+  }
+  for (const [k, v] of trendingCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL_TRENDING) trendingCache.delete(k);
+  }
+  for (const [k, v] of recsCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL_RECS) recsCache.delete(k);
+  }
+  for (const [k, v] of subQueryCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL_SUBQUERY) subQueryCache.delete(k);
+  }
+}, 1000 * 60 * 15);
 let ytClient = null;
 let ytInitPromise = null;
 
@@ -215,7 +270,7 @@ function extractRichTrackMetadata({ title = '', description = '', author = '' })
   };
 }
 
-// 1. Search API with filter support & rich metadata extraction
+// 1. Search API with filter support, instant in-memory cache & rich metadata extraction
 app.get('/api/search', async (req, res) => {
   const query = req.query.q;
   const filter = req.query.filter || 'all'; // 'all' | 'songs' | 'artists'
@@ -223,13 +278,24 @@ app.get('/api/search', async (req, res) => {
     return res.status(400).json({ error: 'Search query is required' });
   }
 
+  const cacheKey = `${query.trim().toLowerCase()}_${filter}`;
+  if (searchCache.has(cacheKey)) {
+    const cached = searchCache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_TTL_SEARCH) {
+      return res.json({ results: cached.data });
+    }
+  }
+
   try {
     let searchQuery = query;
     if (filter === 'songs') searchQuery += ' song audio';
     if (filter === 'artists') searchQuery += ' official channel artist';
 
-    const results = await ytSearch(searchQuery);
-    const videos = (results.videos || []).slice(0, 30).map(v => {
+    const rawVideos = await fastYtSearch(searchQuery, 4500);
+    // Filter out shorts, status videos, and duplicate junk
+    const cleanVideos = filterAndDeduplicate(rawVideos, { minDuration: 50, maxDuration: 900 });
+
+    const videos = cleanVideos.slice(0, 30).map(v => {
       const meta = extractRichTrackMetadata({
         title: v.title,
         description: v.description,
@@ -252,6 +318,7 @@ app.get('/api/search', async (req, res) => {
       };
     });
 
+    searchCache.set(cacheKey, { data: videos, timestamp: Date.now() });
     res.json({ results: videos });
   } catch (err) {
     console.error('[Search Error]', err.message);
@@ -359,6 +426,34 @@ app.get('/api/stream/:videoId', async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'Streaming failed: ' + err.message });
     }
+  }
+});
+
+// Direct Google Video CDN stream URL API (Ultra-fast direct playback from nearest CDN edge)
+app.get('/api/stream-url/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  const quality = req.query.quality || 'best';
+  if (!videoId) return res.status(400).send('Missing videoId');
+
+  try {
+    const { audioFormat, totalLength, mimeType } = await getCachedStreamInfo(videoId, quality);
+    if (audioFormat && audioFormat.url) {
+      return res.json({
+        url: audioFormat.url,
+        totalLength,
+        mimeType,
+        videoId
+      });
+    }
+    // Fallback to proxy stream URL if direct url was not present
+    res.json({
+      url: `/api/stream/${videoId}?quality=${quality}`,
+      totalLength,
+      mimeType,
+      videoId
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -619,6 +714,15 @@ app.post('/api/recommendations', async (req, res) => {
       primaryArtist = recentHistory[0].artist || primaryArtist;
     }
 
+    // Fast In-Memory Recommendations Cache check
+    const recCacheKey = `${effectiveLang}_${secondaryLang}_${mood}_${genreToUse || 'general'}_${primaryArtist || 'all'}`;
+    if (recsCache.has(recCacheKey)) {
+      const cached = recsCache.get(recCacheKey);
+      if (Date.now() - cached.timestamp < CACHE_TTL_RECS) {
+        return res.json(cached.data);
+      }
+    }
+
     // 5. Clean title of latest played track for contextual similarity
     const cleanLatestTitle = latestTrack?.title
       ? cleanRawTitle(latestTrack.title).slice(0, 36)
@@ -640,12 +744,12 @@ app.post('/api/recommendations', async (req, res) => {
     if (cleanLatestTitle) {
       queryTasks.push(
         Promise.all([
-          ytSearch(`${latestSinger || primaryArtist} ${latestTrackLang} melody video songs`).catch(() => ({ videos: [] })),
+          fastYtSearch(`${latestSinger || primaryArtist} ${latestTrackLang} melody video songs`),
           latestActor
-            ? ytSearch(`${latestActor} ${latestTrackLang} hit songs`).catch(() => ({ videos: [] }))
-            : ytSearch(`${latestTrackLang} evergreen hit melody songs video`).catch(() => ({ videos: [] })),
-          ytSearch(`${genreToUse} ${latestTrackLang} superhit songs`).catch(() => ({ videos: [] }))
-        ]).then(([r1, r2, r3]) => [...(r1.videos || []), ...(r2.videos || []), ...(r3.videos || [])])
+            ? fastYtSearch(`${latestActor} ${latestTrackLang} hit songs`)
+            : fastYtSearch(`${latestTrackLang} evergreen hit melody songs video`),
+          fastYtSearch(`${genreToUse} ${latestTrackLang} superhit songs`)
+        ]).then(([r1, r2, r3]) => [...r1, ...r2, ...r3])
       );
       sectionMeta.push({
         title: `Similar to ${cleanLatestTitle}`,
@@ -654,8 +758,7 @@ app.post('/api/recommendations', async (req, res) => {
       });
     } else {
       queryTasks.push(
-        ytSearch(`${primaryArtist} ${effectiveLang} songs hits`).catch(() => ytSearch(`${effectiveLang} superhit songs`))
-          .then(r => r.videos || [])
+        fastYtSearch(`${primaryArtist} ${effectiveLang} songs hits`)
       );
       sectionMeta.push({
         title: `More from ${primaryArtist}`,
@@ -666,8 +769,7 @@ app.post('/api/recommendations', async (req, res) => {
 
     // --- Section 1: Primary Language Chartbusters (e.g. Top Malayalam Melodies) ---
     queryTasks.push(
-      ytSearch(`${effectiveLang} official video songs 2025 2026`).catch(() => ytSearch(`${effectiveLang} hit songs 2026`))
-        .then(r => r.videos || [])
+      fastYtSearch(`${effectiveLang} official video songs 2025 2026`)
     );
     sectionMeta.push({
       title: `Top ${effectiveLang} Melodies`,
@@ -677,8 +779,7 @@ app.post('/api/recommendations', async (req, res) => {
 
     // --- Section 2: Secondary Language Station (e.g. Top Telugu Hits) ---
     queryTasks.push(
-      ytSearch(`${secondaryLang} official video songs 2025 2026`).catch(() => ytSearch(`${secondaryLang} top hits`))
-        .then(r => r.videos || [])
+      fastYtSearch(`${secondaryLang} official video songs 2025 2026`)
     );
     sectionMeta.push({
       title: `Top ${secondaryLang} Hits`,
@@ -688,8 +789,7 @@ app.post('/api/recommendations', async (req, res) => {
 
     // --- Section 3: Artist Radio ---
     queryTasks.push(
-      ytSearch(`${primaryArtist} ${effectiveLang} hit songs playlist`).catch(() => ytSearch(`${primaryArtist} best songs`))
-        .then(r => r.videos || [])
+      fastYtSearch(`${primaryArtist} ${effectiveLang} hit songs playlist`)
     );
     sectionMeta.push({
       title: `Artist Radio: ${primaryArtist}`,
@@ -699,8 +799,7 @@ app.post('/api/recommendations', async (req, res) => {
 
     // --- Section 4: Genre / Vibe Station in Primary Language ---
     queryTasks.push(
-      ytSearch(`${effectiveLang} ${genreToUse} official songs`).catch(() => ytSearch(`${effectiveLang} hits playlist`))
-        .then(r => r.videos || [])
+      fastYtSearch(`${effectiveLang} ${genreToUse} official songs`)
     );
     sectionMeta.push({
       title: `${effectiveLang} ${genreToUse}`,
@@ -710,8 +809,7 @@ app.post('/api/recommendations', async (req, res) => {
 
     // --- Section 5: Discover / Tertiary Language Station (e.g. Hindi / Bollywood Viral) ---
     queryTasks.push(
-      ytSearch(`${tertiaryLang} top viral trending songs 2026`).catch(() => ytSearch(`${tertiaryLang} top hits`))
-        .then(r => r.videos || [])
+      fastYtSearch(`${tertiaryLang} top viral trending songs 2026`)
     );
     sectionMeta.push({
       title: `${tertiaryLang} Viral Hits`,
@@ -721,8 +819,7 @@ app.post('/api/recommendations', async (req, res) => {
 
     // --- Section 6: Mood & Vibes Station ---
     queryTasks.push(
-      ytSearch(`${mood} ${effectiveLang} songs`).catch(() => ytSearch(`${effectiveLang} mood songs`))
-        .then(r => r.videos || [])
+      fastYtSearch(`${mood} ${effectiveLang} songs`)
     );
     sectionMeta.push({
       title: `${mood} Vibes (${effectiveLang})`,
@@ -763,7 +860,7 @@ app.post('/api/recommendations', async (req, res) => {
       });
     }
 
-    res.json({
+    const responsePayload = {
       heavyRotation: filterAndDeduplicate(frequentTracks, { minDuration: 40, maxDuration: 1800 }).slice(0, 12),
       lastPlayedMix: { title: sectionMeta[0].title, subtitle: sectionMeta[0].subtitle, tracks: mapAndClean(rawResults[0], sectionMeta[0]) },
       languageMix: { title: sectionMeta[1].title, subtitle: sectionMeta[1].subtitle, tracks: mapAndClean(rawResults[1], sectionMeta[1]) },
@@ -774,7 +871,11 @@ app.post('/api/recommendations', async (req, res) => {
       moodMix: { title: sectionMeta[6].title, subtitle: sectionMeta[6].subtitle, tracks: mapAndClean(rawResults[6], sectionMeta[6]) },
       activeLanguage: effectiveLang,
       secondaryLanguage: secondaryLang
-    });
+    };
+
+    recsCache.set(recCacheKey, { data: responsePayload, timestamp: Date.now() });
+
+    res.json(responsePayload);
   } catch (err) {
     console.error('[Recommendation Error]', err.message);
     res.status(500).json({ error: 'Failed to generate recommendations' });
@@ -806,32 +907,32 @@ app.get('/api/related/:videoId', async (req, res) => {
     const isChannel = LABEL_NAMES.test(author);
 
     const searches = [
-      ytSearch(`${cleanTitle} ${trackLang} melody video songs`).catch(() => ({ videos: [] })),
-      ytSearch(`${trackLang} evergreen melody hit songs video`).catch(() => ({ videos: [] }))
+      fastYtSearch(`${cleanTitle} ${trackLang} melody video songs`),
+      fastYtSearch(`${trackLang} evergreen melody hit songs video`)
     ];
 
     // Priority 1: Real detected singer (e.g. KJ Yesudas, Sid Sriram, Arijit Singh)
     if (trackMeta.singers.length > 0) {
-      searches.push(ytSearch(`${trackMeta.singers[0]} ${trackLang} melody hit songs`).catch(() => ({ videos: [] })));
+      searches.push(fastYtSearch(`${trackMeta.singers[0]} ${trackLang} melody hit songs`));
     } else if (!isChannel && author && author !== 'Unknown Artist') {
-      searches.push(ytSearch(`${author} ${trackLang} songs hits`).catch(() => ({ videos: [] })));
+      searches.push(fastYtSearch(`${author} ${trackLang} songs hits`));
     } else {
       const topArtist = trackLang === 'Malayalam' ? 'KJ Yesudas' : (trackLang === 'Telugu' ? 'Sid Sriram' : 'Arijit Singh');
-      searches.push(ytSearch(`${topArtist} ${trackLang} melody video song`).catch(() => ({ videos: [] })));
+      searches.push(fastYtSearch(`${topArtist} ${trackLang} melody video song`));
     }
 
     // Priority 2: Real detected actor (e.g. Mohanlal, Allu Arjun, Vijay)
     if (trackMeta.actors.length > 0) {
-      searches.push(ytSearch(`${trackMeta.actors[0]} ${trackLang} evergreen hit songs`).catch(() => ({ videos: [] })));
+      searches.push(fastYtSearch(`${trackMeta.actors[0]} ${trackLang} evergreen hit songs`));
     }
 
     // Priority 3: Real detected music director (e.g. Sharreth, Anirudh, Pritam)
     if (trackMeta.musicDirector) {
-      searches.push(ytSearch(`${trackMeta.musicDirector} ${trackLang} songs hits`).catch(() => ({ videos: [] })));
+      searches.push(fastYtSearch(`${trackMeta.musicDirector} ${trackLang} songs hits`));
     }
 
     const searchResults = await Promise.all(searches);
-    const rawCandidates = searchResults.flatMap(r => r.videos || []);
+    const rawCandidates = searchResults.flatMap(videos => videos || []);
 
     const cleanCandidates = filterAndDeduplicate(rawCandidates, {
       excludeTitle: title,
@@ -841,8 +942,8 @@ app.get('/api/related/:videoId', async (req, res) => {
 
     // If specific queries returned fewer than 10 tracks, top up with evergreen chartbusters in that language
     if (cleanCandidates.length < 10) {
-      const topUpSearch = await ytSearch(`${trackLang} superhit melody songs video`).catch(() => ({ videos: [] }));
-      const topUpClean = filterAndDeduplicate(topUpSearch.videos || [], {
+      const topUpSearch = await fastYtSearch(`${trackLang} superhit melody songs video`);
+      const topUpClean = filterAndDeduplicate(topUpSearch || [], {
         excludeTitle: title,
         minDuration: 70,
         maxDuration: 900
@@ -890,10 +991,18 @@ app.get('/api/related/:videoId', async (req, res) => {
   }
 });
 
-// 5. Trending Songs by Language / Genre
+// 5. Trending Songs by Language / Genre with high-speed Cache
 app.get('/api/trending', async (req, res) => {
   const genre = req.query.genre || 'trending';
   const language = req.query.lang || '';
+  const cacheKey = `${genre}_${language}`;
+
+  if (trendingCache.has(cacheKey)) {
+    const cached = trendingCache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_TTL_TRENDING) {
+      return res.json({ results: cached.data });
+    }
+  }
 
   let query = 'Top trending popular music songs 2026';
   if (language && language !== 'all') {
@@ -914,6 +1023,7 @@ app.get('/api/trending', async (req, res) => {
       views: v.views
     }));
 
+    trendingCache.set(cacheKey, { data: videos, timestamp: Date.now() });
     res.json({ results: videos });
   } catch (err) {
     console.error('[Trending Error]', err.message);
@@ -964,12 +1074,33 @@ app.get('/api/lyrics', async (req, res) => {
   }
 });
 
-// Serve frontend in production
+// Serve frontend in production (if built)
 const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
+const fs = require('fs');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
+// Root status endpoint for cloud hosting checks & health monitors
+app.get('/', (req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.json({
+    status: 'online',
+    app: 'Harmoniq Audio Streaming Engine',
+    version: '2.0',
+    time: new Date().toISOString()
+  });
+});
 
 app.use((req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.status(404).json({ error: 'Endpoint not found', path: req.path });
 });
 
 // Helper to get local IP
