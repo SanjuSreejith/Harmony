@@ -70,7 +70,18 @@ export function PlayerProvider({ children }) {
     return null;
   });
   const currentTrackRef = useRef(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(() => {
+    try {
+      const saved = localStorage.getItem('musicit_last_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.wasPlaying && Date.now() - parsed.timestamp < 30000) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  });
   const [currentTime, setCurrentTimeState] = useState(() => {
     try {
       const saved = localStorage.getItem('musicit_last_session');
@@ -111,9 +122,22 @@ export function PlayerProvider({ children }) {
   const isLoadingRef = useRef(false);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
   const [playbackError, setPlaybackError] = useState(null);
-  const [useDirectPlayer, setUseDirectPlayer] = useState(false);
-  const useDirectPlayerRef = useRef(false);
-  useEffect(() => { useDirectPlayerRef.current = useDirectPlayer; }, [useDirectPlayer]);
+  const [useDirectPlayer, setUseDirectPlayerState] = useState(() => {
+    try {
+      return localStorage.getItem('musicit_use_direct_player') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const useDirectPlayerRef = useRef(useDirectPlayer);
+  const setUseDirectPlayer = (val) => {
+    const bool = Boolean(val);
+    useDirectPlayerRef.current = bool;
+    setUseDirectPlayerState(bool);
+    try {
+      localStorage.setItem('musicit_use_direct_player', bool ? 'true' : 'false');
+    } catch {}
+  };
 
   // Active Indian language filter on Home
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
@@ -418,6 +442,7 @@ export function PlayerProvider({ children }) {
             track: currentTrack,
             position: Math.floor(currentTimeRef.current || currentTime || 0),
             duration: Math.floor(durationRef.current || duration || 0),
+            wasPlaying: isPlaying,
             timestamp: Date.now()
           })
         );
@@ -436,6 +461,7 @@ export function PlayerProvider({ children }) {
             track: currentTrack,
             position: Math.floor(currentTimeRef.current || currentTime || 0),
             duration: Math.floor(durationRef.current || duration || 0),
+            wasPlaying: true,
             timestamp: Date.now()
           })
         );
