@@ -1,0 +1,9 @@
+{
+  "appId": "com.musicit.app",
+  "appName": "Harmoniq",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

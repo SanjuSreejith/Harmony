@@ -1,4 +1,14 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+try {
+  const { setGlobalDispatcher, Agent } = require('undici');
+  setGlobalDispatcher(new Agent({
+    connect: {
+      rejectUnauthorized: false
+    }
+  }));
+} catch (e) {
+  // Undici fallback
+}
 
 const express = require('express');
 const cors = require('cors');
@@ -118,12 +128,24 @@ async function getCachedStreamInfo(videoId, quality = 'best') {
     throw new Error('No audio format found');
   }
 
+  let directUrl = null;
+  try {
+    if (typeof audioFormat.decipher === 'function') {
+      directUrl = await audioFormat.decipher(yt.session.player);
+    } else if (audioFormat.url) {
+      directUrl = audioFormat.url;
+    }
+  } catch (e) {
+    directUrl = audioFormat.url || null;
+  }
+
   const totalLength = audioFormat.content_length ? parseInt(audioFormat.content_length, 10) : null;
   const mimeType = audioFormat.mime_type ? audioFormat.mime_type.split(';')[0] : 'audio/mp4';
 
   const entry = {
     info,
     audioFormat,
+    directUrl,
     totalLength,
     mimeType,
     selectedQuality,
@@ -375,7 +397,7 @@ app.get('/api/ping', (req, res) => {
   });
 });
 
-// 2. Audio Stream API (VISIONOS + Range Chunking + In-Memory Caching)
+// 2. Audio Stream API (VISIONOS + Full Range Direct Proxy + Fallback)
 app.get('/api/stream/:videoId', async (req, res) => {
   const { videoId } = req.params;
   const quality = req.query.quality || 'best';
@@ -383,10 +405,45 @@ app.get('/api/stream/:videoId', async (req, res) => {
 
   try {
     const yt = await getInnertube();
-    const { totalLength, mimeType, selectedQuality } = await getCachedStreamInfo(videoId, quality);
+    const { totalLength, mimeType, selectedQuality, directUrl } = await getCachedStreamInfo(videoId, quality);
 
     const rangeHeader = req.headers.range;
 
+    // 1. Prefer high-speed Google Video CDN Proxy with native Range header pass-through
+    if (directUrl) {
+      try {
+        const fetchHeaders = {};
+        if (rangeHeader) {
+          fetchHeaders['Range'] = rangeHeader;
+        }
+
+        const upstreamRes = await fetch(directUrl, { headers: fetchHeaders });
+        res.status(upstreamRes.status);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        const upstreamType = upstreamRes.headers.get('content-type') || mimeType;
+        if (upstreamType) res.setHeader('Content-Type', upstreamType);
+
+        const upstreamRange = upstreamRes.headers.get('content-range');
+        if (upstreamRange) res.setHeader('Content-Range', upstreamRange);
+
+        const upstreamLength = upstreamRes.headers.get('content-length');
+        if (upstreamLength) res.setHeader('Content-Length', upstreamLength);
+
+        const readable = Readable.fromWeb(upstreamRes.body);
+        readable.on('error', () => {});
+        res.on('close', () => {
+          try { readable.destroy(); } catch (e) {}
+        });
+        readable.pipe(res);
+        return;
+      } catch (proxyErr) {
+        console.warn(`[Proxy stream fallback for ${videoId}]:`, proxyErr.message);
+      }
+    }
+
+    // 2. Fallback: yt.download stream
     if (rangeHeader && totalLength) {
       const parts = rangeHeader.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
@@ -398,13 +455,6 @@ app.get('/api/stream/:videoId', async (req, res) => {
       }
 
       if (end >= totalLength) end = totalLength - 1;
-
-      // Clamp chunks to 1MB to prevent YouTube chunk rejection
-      const MAX_CHUNK = 1024 * 1024; // 1MB
-      if (!parts[1] || (end - start + 1) > MAX_CHUNK) {
-        end = Math.min(totalLength - 1, start + MAX_CHUNK - 1);
-      }
-
       const contentLength = end - start + 1;
 
       res.status(206);
