@@ -99,13 +99,13 @@ export default function MiniPlayer() {
             {/* Play / Pause button */}
             <button
               onClick={togglePlay}
-              disabled={isLoading}
-              className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+              className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-lg active:scale-95 transition-transform relative"
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
-              {isLoading ? (
-                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-              ) : isPlaying ? (
+              {isLoading && (
+                <span className="absolute -inset-1 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin pointer-events-none" />
+              )}
+              {isPlaying ? (
                 <Pause className="w-5 h-5 fill-current" />
               ) : (
                 <Play className="w-5 h-5 fill-current ml-0.5" />

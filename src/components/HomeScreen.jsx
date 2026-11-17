@@ -442,10 +442,10 @@ export default function HomeScreen() {
             </button>
           )}
 
-          {/* Subtle Refresh Button */}
+          {/* Refresh Button (Visible on sm+ screens to preserve mobile header space) */}
           <button
             onClick={handleManualRefresh}
-            className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
+            className="hidden sm:flex p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
             title="Refresh Recommendations"
           >
             <RotateCw className={`w-3.5 h-3.5 text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />

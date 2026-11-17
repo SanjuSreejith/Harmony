@@ -55,6 +55,7 @@ export function PlayerProvider({ children }) {
   const bassFilterRef = useRef(null);
   const trebleFilterRef = useRef(null);
   const hasRealAudioStartedRef = useRef(false);
+  const isUserPausedRef = useRef(false);
   const [hasRealAudioStarted, setHasRealAudioStarted] = useState(false);
 
   // Playback state with persistent session resume
@@ -476,21 +477,90 @@ export function PlayerProvider({ children }) {
     }
   }, [isPlaying, currentTrack?.id, currentTrack?.title, currentTrack?.thumbnail]);
 
-  // Mobile background audio wake-lock keepalive:
-  // When useDirectPlayer is active, mobile browsers suspend the tab on minimize unless
-  // a top-level HTML5 <audio> element is actively playing audio with a MediaSession.
+  // Audible Web Audio Keepalive Engine:
+  // Emits an inaudible 20 Hz sub-bass carrier wave (-76dB) via AudioContext.
+  // Connects to ctx.destination and creates a live MediaStream for the HTML5 <audio> element.
+  // Chrome identifies the tab as "Audible" (speaker icon), permanently exempting the tab
+  // and all its iframes from background throttling, freezing, or suspension when switching tabs!
+  const audibleKeepAliveRef = useRef(null);
+
+  function startAudibleKeepAlive() {
+    try {
+      if (audibleKeepAliveRef.current?.ctx) {
+        if (audibleKeepAliveRef.current.ctx.state === 'suspended') {
+          audibleKeepAliveRef.current.ctx.resume().catch(() => {});
+        }
+        return;
+      }
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 20; // 20 Hz inaudible sub-carrier
+      gain.gain.value = 0.00015; // Inaudible to humans (-76 dB), real non-zero PCM frames to Chrome
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      let stream = null;
+      try {
+        if (ctx.createMediaStreamDestination) {
+          const streamDest = ctx.createMediaStreamDestination();
+          gain.connect(streamDest);
+          stream = streamDest.stream;
+        }
+      } catch (err) {}
+
+      osc.start();
+      audibleKeepAliveRef.current = { ctx, osc, gain, stream };
+    } catch (e) {}
+  }
+
+  function pauseAudibleKeepAlive() {
+    try {
+      if (audibleKeepAliveRef.current?.ctx && audibleKeepAliveRef.current.ctx.state === 'running') {
+        audibleKeepAliveRef.current.ctx.suspend().catch(() => {});
+      }
+    } catch (e) {}
+  }
+
+  function resumeAudibleKeepAlive() {
+    try {
+      if (audibleKeepAliveRef.current?.ctx && audibleKeepAliveRef.current.ctx.state === 'suspended') {
+        audibleKeepAliveRef.current.ctx.resume().catch(() => {});
+      } else {
+        startAudibleKeepAlive();
+      }
+    } catch (e) {}
+  }
+
+  // Mobile & Background Tab Audio Wake-Lock Keepalive:
+  // When useDirectPlayer is active, feed the HTML5 <audio> element with live Web Audio MediaStream
+  // or looping audio so browser media controls and background audio priority never stall!
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     if (useDirectPlayer && isPlaying) {
-      if (audio.src !== SILENT_AUDIO_URI) {
-        audio.src = SILENT_AUDIO_URI;
-        audio.loop = true;
-      }
-      audio.play().catch(() => {});
+      try {
+        if (audibleKeepAliveRef.current?.stream) {
+          if (audio.srcObject !== audibleKeepAliveRef.current.stream) {
+            audio.removeAttribute('src');
+            audio.srcObject = audibleKeepAliveRef.current.stream;
+          }
+        } else if (audio.src !== SILENT_AUDIO_URI) {
+          audio.srcObject = null;
+          audio.src = SILENT_AUDIO_URI;
+          audio.loop = true;
+        }
+        audio.play().catch(() => {});
+      } catch (e) {}
     } else if (useDirectPlayer && !isPlaying) {
-      audio.pause();
+      try { audio.pause(); } catch (e) {}
     }
   }, [useDirectPlayer, isPlaying]);
 
@@ -678,6 +748,7 @@ export function PlayerProvider({ children }) {
     const audio = new Audio();
     audio.preload = 'auto';
     audio.playsInline = true;
+    audio.crossOrigin = 'anonymous';
     audioRef.current = audio;
 
     const handlePlay = () => setIsPlaying(true);
@@ -785,13 +856,20 @@ export function PlayerProvider({ children }) {
     const handleError = (e) => {
       console.warn('[Audio Error on HTML5 audio element]', e);
       if (currentTrackRef.current) {
-        // If HTML5 audio stream fails (e.g. Render 500 error or PC connection drop),
-        // seamlessly switch to BackgroundDirectPlayer with mobile background audio keepalive
+        // If HTML5 audio stream fails (e.g. Render cold start or network glitch),
+        // seamlessly failover to Direct Player with background wake-lock and Audible tab engine!
         console.log('[Player] Server stream error. Seamlessly switching to Direct Player with background wake-lock!');
+        startAudibleKeepAlive();
         if (audioRef.current) {
           try {
-            audioRef.current.src = SILENT_AUDIO_URI;
-            audioRef.current.loop = true;
+            if (audibleKeepAliveRef.current?.stream) {
+              audioRef.current.removeAttribute('src');
+              audioRef.current.srcObject = audibleKeepAliveRef.current.stream;
+            } else {
+              audioRef.current.srcObject = null;
+              audioRef.current.src = SILENT_AUDIO_URI;
+              audioRef.current.loop = true;
+            }
             audioRef.current.play().catch(() => {});
           } catch (err) {}
         }
@@ -833,6 +911,9 @@ export function PlayerProvider({ children }) {
 
   // Web Audio API Equalizer Filter setup - safe, non-destructive without audio cuts
   function applyEqualizerPreset(preset) {
+    // If running in direct YouTube player mode, do not route audio element through web audio filters
+    if (useDirectPlayer) return;
+
     if (!preset || preset === 'flat') {
       if (bassFilterRef.current && trebleFilterRef.current) {
         try {
@@ -993,6 +1074,8 @@ export function PlayerProvider({ children }) {
       }
 
       isAutoplayRef.current = Boolean(isAutoplay);
+      isUserPausedRef.current = false;
+      startAudibleKeepAlive();
       hasRealAudioStartedRef.current = false;
       setHasRealAudioStarted(false);
       setPlaybackError(null);
@@ -1191,10 +1274,17 @@ export function PlayerProvider({ children }) {
           console.warn('[Player] Local PC audio play failed:', err);
           // Fall back to direct player engine for uninterrupted playback!
           console.log('[Player] Falling back to direct player engine for track:', track.id);
+          startAudibleKeepAlive();
           if (audio) {
             try {
-              audio.src = SILENT_AUDIO_URI;
-              audio.loop = true;
+              if (audibleKeepAliveRef.current?.stream) {
+                audio.removeAttribute('src');
+                audio.srcObject = audibleKeepAliveRef.current.stream;
+              } else {
+                audio.srcObject = null;
+                audio.src = SILENT_AUDIO_URI;
+                audio.loop = true;
+              }
               audio.play().catch(() => {});
             } catch (e) {}
           }
@@ -1407,11 +1497,16 @@ export function PlayerProvider({ children }) {
     if (isPlaying) {
       pauseTrack();
     } else {
+      isUserPausedRef.current = false;
+      startAudibleKeepAlive();
       resumeTrack();
     }
   }
 
   function pauseTrack() {
+    isUserPausedRef.current = true;
+    pauseAudibleKeepAlive();
+
     if (isNativePlatform()) {
       pauseNativeStream().catch(() => {});
     }
@@ -1438,6 +1533,9 @@ export function PlayerProvider({ children }) {
   }
 
   function resumeTrack(targetSeconds = null) {
+    isUserPausedRef.current = false;
+    resumeAudibleKeepAlive();
+
     if (isNativePlatform()) {
       resumeNativeStream().catch(() => {});
     }
@@ -1473,7 +1571,13 @@ export function PlayerProvider({ children }) {
     if (useDirectPlayer) {
       setIsPlaying(true);
       if (audio) {
-        if (audio.src !== SILENT_AUDIO_URI) {
+        if (audibleKeepAliveRef.current?.stream) {
+          if (audio.srcObject !== audibleKeepAliveRef.current.stream) {
+            audio.removeAttribute('src');
+            audio.srcObject = audibleKeepAliveRef.current.stream;
+          }
+        } else if (audio.src !== SILENT_AUDIO_URI) {
+          audio.srcObject = null;
           audio.src = SILENT_AUDIO_URI;
           audio.loop = true;
         }
@@ -1904,6 +2008,7 @@ export function PlayerProvider({ children }) {
     <PlayerContext.Provider
       value={{
         audioRef,
+        isUserPausedRef,
         currentTrack,
         isPlaying,
         currentTime,

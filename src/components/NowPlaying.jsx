@@ -214,29 +214,36 @@ export default function NowPlaying() {
     setIsSeeking(false);
   }
 
-  // Touch Swipe Handlers for mobile gestures
-  function handleTouchStart(e) {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
+  // Touch Swipe Handlers for mobile gestures (Targeted to specific areas)
+  const artworkTouchStartX = useRef(0);
+  const artworkTouchStartY = useRef(0);
+  const headerTouchStartY = useRef(0);
+
+  function handleArtworkTouchStart(e) {
+    artworkTouchStartX.current = e.touches[0].clientX;
+    artworkTouchStartY.current = e.touches[0].clientY;
   }
 
-  function handleTouchEnd(e) {
-    const diffX = e.changedTouches[0].clientX - touchStartX.current;
-    const diffY = e.changedTouches[0].clientY - touchStartY.current;
-
-    // Vertical swipe down to dismiss
-    if (diffY > 90 && Math.abs(diffX) < 80) {
-      handleCollapse();
-      return;
-    }
-
-    // Horizontal swipe on artwork for Next/Prev
+  function handleArtworkTouchEnd(e) {
+    const diffX = e.changedTouches[0].clientX - artworkTouchStartX.current;
+    const diffY = e.changedTouches[0].clientY - artworkTouchStartY.current;
     if (Math.abs(diffX) > 60 && Math.abs(diffY) < 60) {
       if (diffX < 0) {
         playNext(); // Swipe left -> Next
       } else {
         playPrevious(); // Swipe right -> Previous
       }
+    }
+  }
+
+  function handleHeaderTouchStart(e) {
+    headerTouchStartY.current = e.touches[0].clientY;
+  }
+
+  function handleHeaderTouchEnd(e) {
+    const diffY = e.changedTouches[0].clientY - headerTouchStartY.current;
+    if (diffY > 60) {
+      handleCollapse(); // Pull down -> Dismiss
     }
   }
 
@@ -248,8 +255,6 @@ export default function NowPlaying() {
 
   return (
     <div
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
       className="fixed inset-0 z-50 bg-[#08080c] flex flex-col justify-between safe-top safe-bottom overflow-hidden animate-in fade-in slide-in-from-bottom duration-300"
     >
       {/* Dynamic Ambient Background Glow using dominant artwork color */}
@@ -263,123 +268,143 @@ export default function NowPlaying() {
       )}
 
       <div className="relative z-10 w-full max-w-xl mx-auto h-full flex flex-col justify-between overflow-y-auto no-scrollbar py-2">
-        {/* Top Header Bar */}
-        <div className="px-5 pt-1 pb-2 flex items-center justify-between">
-        <button
+        {/* Pull-down drag indicator handle */}
+        <div 
           onClick={handleCollapse}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-slate-300 hover:text-white bg-white/5 active:scale-90 transition-transform"
-          aria-label="Collapse"
+          onTouchStart={handleHeaderTouchStart}
+          onTouchEnd={handleHeaderTouchEnd}
+          className="w-full flex justify-center pt-1 pb-1 cursor-pointer"
         >
-          <ChevronDown className="w-6 h-6" />
-        </button>
-
-        <div className="flex flex-col items-center">
-          <span className="text-[10px] tracking-widest uppercase font-bold text-slate-400">
-            Playing Ad-Free
-          </span>
-          <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Background Active
-          </span>
+          <div className="w-10 h-1 rounded-full bg-white/25 hover:bg-white/40 transition-colors" />
         </div>
 
-        <div className="flex items-center gap-1">
-          {/* Sound Controls Trigger (Speed & Volume) */}
+        {/* Top Header Bar */}
+        <div 
+          onTouchStart={handleHeaderTouchStart}
+          onTouchEnd={handleHeaderTouchEnd}
+          className="px-5 pt-0.5 pb-2 flex items-center justify-between"
+        >
           <button
-            onClick={() => setShowSoundControls(!showSoundControls)}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-              showSoundControls
-                ? 'bg-emerald-500/20 text-emerald-400'
-                : 'text-slate-300 hover:text-white bg-white/5'
-            }`}
-            title="Speed & Volume"
+            onClick={handleCollapse}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-slate-300 hover:text-white bg-white/5 active:scale-90 transition-transform"
+            aria-label="Collapse"
           >
-            <Gauge className="w-4 h-4" />
+            <ChevronDown className="w-6 h-6" />
           </button>
 
-          {/* Settings Trigger */}
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:text-white bg-white/5"
-            title="Audio Quality & Settings"
-          >
-            <Sliders className="w-4 h-4 text-emerald-400" />
-          </button>
-
-          {/* Sleep Timer Indicator */}
-          <button
-            onClick={() => setShowSleepTimer(true)}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
-              sleepTimerTime !== null
-                ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40'
-                : 'text-slate-400 hover:text-white bg-white/5'
-            }`}
-            title="Sleep timer"
-          >
-            <Moon className="w-4 h-4" />
-          </button>
-
-          {/* Queue Button */}
-          <button
-            onClick={() => setShowQueueSheet(true)}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:text-white bg-white/5 active:scale-90 transition-transform"
-            title="Up Next Queue"
-          >
-            <ListMusic className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Floating Speed & Volume Overlay (when toggled) */}
-      {showSoundControls && (
-        <div className="relative z-20 mx-6 p-3 rounded-2xl glass-card border border-white/10 space-y-3 animate-in fade-in slide-in-from-top-2">
-          {/* Volume Control */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={toggleMute}
-              className="text-slate-400 hover:text-white p-1"
-            >
-              {isMuted || volume === 0 ? (
-                <VolumeX className="w-4 h-4 text-red-400" />
-              ) : (
-                <Volume2 className="w-4 h-4 text-emerald-400" />
-              )}
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={isMuted ? 0 : volume}
-              onChange={(e) => setVolume(parseFloat(e.target.value))}
-              className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-            />
-            <span className="text-[11px] font-mono text-slate-400 w-8 text-right">
-              {Math.round((isMuted ? 0 : volume) * 100)}%
+          <div className="flex flex-col items-center">
+            <span className="text-[10px] tracking-widest uppercase font-bold text-slate-400">
+              Playing Ad-Free
+            </span>
+            <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Harmoniq
             </span>
           </div>
 
-          {/* Playback Speed Chips */}
-          <div className="flex items-center justify-between pt-1 border-t border-white/5">
-            <span className="text-[11px] font-bold text-slate-400 uppercase">Speed:</span>
-            <div className="flex gap-1.5">
-              {[0.75, 1.0, 1.25, 1.5, 2.0].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setPlaybackSpeed(s)}
-                  className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition-all ${
-                    playbackSpeed === s
-                      ? 'bg-emerald-500 text-black font-bold'
-                      : 'bg-white/5 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {s}x
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-1.5">
+            {/* Sound Controls Trigger (Speed & Volume) */}
+            <button
+              onClick={() => setShowSoundControls(!showSoundControls)}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                showSoundControls
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'text-slate-300 hover:text-white bg-white/5'
+              }`}
+              title="Speed & Volume"
+            >
+              <Gauge className="w-4 h-4" />
+            </button>
+
+            {/* Sleep Timer Indicator */}
+            <button
+              onClick={() => setShowSleepTimer(true)}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                sleepTimerTime !== null
+                  ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40'
+                  : 'text-slate-400 hover:text-white bg-white/5'
+              }`}
+              title="Sleep timer"
+            >
+              <Moon className="w-4 h-4" />
+            </button>
+
+            {/* Queue Button */}
+            <button
+              onClick={() => setShowQueueSheet(true)}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:text-white bg-white/5 active:scale-90 transition-transform"
+              title="Up Next Queue"
+            >
+              <ListMusic className="w-4 h-4" />
+            </button>
           </div>
         </div>
-      )}
+
+        {/* Floating Speed & Volume Overlay (when toggled) */}
+        {showSoundControls && (
+          <div className="relative z-20 mx-6 p-3 rounded-2xl glass-card border border-white/10 space-y-3 animate-in fade-in slide-in-from-top-2">
+            {/* Volume Control */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={toggleMute}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                {isMuted || volume === 0 ? (
+                  <VolumeX className="w-4 h-4 text-red-400" />
+                ) : (
+                  <Volume2 className="w-4 h-4 text-emerald-400" />
+                )}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isMuted ? 0 : volume}
+                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+              />
+              <span className="text-[11px] font-mono text-slate-400 w-8 text-right">
+                {Math.round((isMuted ? 0 : volume) * 100)}%
+              </span>
+            </div>
+
+            {/* Playback Speed Chips */}
+            <div className="flex items-center justify-between pt-1 border-t border-white/5">
+              <span className="text-[11px] font-bold text-slate-400 uppercase">Speed:</span>
+              <div className="flex gap-1.5">
+                {[0.75, 1.0, 1.25, 1.5, 2.0].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setPlaybackSpeed(s)}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition-all ${
+                      playbackSpeed === s
+                        ? 'bg-emerald-500 text-black font-bold'
+                        : 'bg-white/5 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Audio Settings Shortcut */}
+            <div className="flex items-center justify-between pt-1 border-t border-white/5 text-xs text-slate-400">
+              <span>Sound & Equalizer</span>
+              <button
+                onClick={() => {
+                  setShowSoundControls(false);
+                  setShowSettingsModal(true);
+                }}
+                className="text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Full Settings</span>
+              </button>
+            </div>
+          </div>
+        )}
 
       {/* View Switcher: Player / Lyrics / Video */}
       <div className="relative z-10 flex justify-center py-1">
@@ -425,7 +450,11 @@ export default function NowPlaying() {
         {activeTab === 'player' && (
           <div className="flex flex-col items-center justify-center my-auto space-y-3">
             {/* Album Artwork with Swipe Gestures */}
-            <div className="relative w-full max-w-[310px] aspect-square rounded-3xl overflow-hidden shadow-2xl border border-white/10 glow-accent group select-none">
+            <div
+              onTouchStart={handleArtworkTouchStart}
+              onTouchEnd={handleArtworkTouchEnd}
+              className="relative w-full max-w-[310px] aspect-square rounded-3xl overflow-hidden shadow-2xl border border-white/10 glow-accent group select-none"
+            >
               <img
                 src={currentTrack.thumbnail}
                 alt={currentTrack.title}
@@ -623,13 +652,14 @@ export default function NowPlaying() {
           {/* Play / Pause button (Large Center - operates both Audio & Video) */}
           <button
             onClick={togglePlay}
-            disabled={isLoading}
-            className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center glow-play active:scale-95 transition-transform shadow-2xl"
+            className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center glow-play active:scale-95 transition-transform shadow-2xl relative"
             aria-label={isPlaying ? 'Pause' : 'Play'}
           >
-            {isLoading ? (
-              <div className="w-6 h-6 border-3 border-black border-t-transparent rounded-full animate-spin" />
-            ) : isPlaying ? (
+            {/* When loading, show an animated halo ring around the button so the button icon remains visible and responsive */}
+            {isLoading && (
+              <span className="absolute -inset-1.5 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin pointer-events-none" />
+            )}
+            {isPlaying ? (
               <Pause className="w-7 h-7 fill-current" />
             ) : (
               <Play className="w-7 h-7 fill-current ml-1" />

@@ -272,12 +272,13 @@ export default function DesktopPlayerBar() {
             {/* Main Play / Pause Button */}
             <button
               onClick={togglePlay}
-              className="w-11 h-11 rounded-full bg-emerald-400 text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-[0_0_20px_rgba(52,211,153,0.4)] hover:bg-emerald-300"
+              className="w-11 h-11 rounded-full bg-emerald-400 text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-[0_0_20px_rgba(52,211,153,0.4)] hover:bg-emerald-300 relative"
               title="Play / Pause (Space)"
             >
-              {isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin text-black" />
-              ) : isPlaying ? (
+              {isLoading && (
+                <span className="absolute -inset-1 rounded-full border-2 border-white border-t-transparent animate-spin pointer-events-none" />
+              )}
+              {isPlaying ? (
                 <Pause className="w-5 h-5 fill-current" />
               ) : (
                 <Play className="w-5 h-5 fill-current ml-0.5" />

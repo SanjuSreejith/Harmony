@@ -21,7 +21,8 @@ export default function BackgroundDirectPlayer() {
     setIsPlaying,
     isDownloaded,
     isVideoMode,
-    useDirectPlayer
+    useDirectPlayer,
+    isUserPausedRef
   } = usePlayer();
 
   const iframeRef = useRef(null);
@@ -64,6 +65,10 @@ export default function BackgroundDirectPlayer() {
       timerRef.current = setInterval(() => {
         sendCommand('getCurrentTime');
         sendCommand('getDuration');
+        // When tab is hidden in background, actively ensure playback state is retained
+        if (document.hidden && (!isUserPausedRef || !isUserPausedRef.current)) {
+          sendCommand('playVideo');
+        }
       }, 500);
     }
 
@@ -127,7 +132,14 @@ export default function BackgroundDirectPlayer() {
         if (data.event === 'onStateChange') {
           if (data.info === 1) {
             setIsPlaying(true);
+            setIsLoading(false);
           } else if (data.info === 2) {
+            // Guard against unsolicited pauses caused by browser tab switching or background throttle
+            if (isUserPausedRef && !isUserPausedRef.current && isPlaying) {
+              console.log('[BackgroundDirectPlayer] Background tab unsolicited pause ignored. Keeping playback alive!');
+              sendCommand('playVideo');
+              return;
+            }
             setIsPlaying(false);
           } else if (data.info === 3) {
             setIsLoading(true);
@@ -186,23 +198,27 @@ export default function BackgroundDirectPlayer() {
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [shouldBeActive, handleTrackEnded, isPlaying, isMuted, volume, currentTrack?.duration]);
+  }, [shouldBeActive, handleTrackEnded, isPlaying, isMuted, volume, currentTrack?.duration, isUserPausedRef]);
 
-  // Keep background audio active when tab is minimized or screen is locked
+  // Keep background audio active when tab is minimized, switched, or screen is locked
   useEffect(() => {
     function handleVisibilityChange() {
-      if (shouldBeActive && isPlaying) {
-        // Prevent browser from throttling or pausing audio upon minimize
+      if (shouldBeActive && isPlaying && (!isUserPausedRef || !isUserPausedRef.current)) {
+        // Prevent browser from throttling or pausing audio upon minimize or tab switch
         sendCommand('playVideo');
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
     window.addEventListener('pagehide', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
       window.removeEventListener('pagehide', handleVisibilityChange);
     };
-  }, [shouldBeActive, isPlaying]);
+  }, [shouldBeActive, isPlaying, isUserPausedRef]);
 
   if (!shouldBeActive || !currentTrack) return null;
 
@@ -219,9 +235,9 @@ export default function BackgroundDirectPlayer() {
         left: 0,
         width: '100vw',
         height: '100vh',
-        opacity: 0.001,
+        opacity: 0.015,
         pointerEvents: 'none',
-        zIndex: -1,
+        zIndex: 0,
         overflow: 'hidden'
       }}
       aria-hidden="true"
@@ -231,7 +247,8 @@ export default function BackgroundDirectPlayer() {
         key={currentTrack.id}
         src={embedUrl}
         title="Harmoniq Audio Engine"
-        allow="autoplay; encrypted-media; clipboard-write; picture-in-picture"
+        allow="autoplay; encrypted-media; clipboard-write; picture-in-picture; web-share"
+        importance="high"
         style={{ width: '100%', height: '100%', border: 'none' }}
       />
     </div>
