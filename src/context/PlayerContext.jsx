@@ -99,9 +99,11 @@ export function PlayerProvider({ children }) {
   });
   const durationRef = useRef(0);
   const setDuration = (val) => {
-    const safe = typeof val === 'number' && isFinite(val) && val > 0 ? val : 0;
-    durationRef.current = safe;
-    setDurationState(safe);
+    // Only accept valid song durations (> 10s) to prevent any short buffer or keepalive loop from corrupting duration
+    if (typeof val === 'number' && isFinite(val) && val > 10) {
+      durationRef.current = val;
+      setDurationState(val);
+    }
   };
   const [buffered, setBuffered] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -553,25 +555,24 @@ export function PlayerProvider({ children }) {
 
       if (!isVideo) {
         let cur = 0;
-        // 1. If HTML5 audio element has an active stream playing
-        if (audio && !audio.paused && !isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
+        // 1. If HTML5 audio element has an active stream playing (strictly when NOT in direct player mode)
+        if (!useDirectPlayer && audio && !audio.paused && !isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
           cur = audio.currentTime;
           hasRealAudioStartedRef.current = true;
-          if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity) {
+          if (audio.duration && isFinite(audio.duration) && audio.duration > 15 && audio.duration !== Infinity) {
             durationRef.current = audio.duration;
             setDuration(audio.duration);
           }
         } else if (useDirectPlayer) {
-          // 2. Direct player active: only advance timer if real song has confirmed started
+          // 2. Direct player active: smoothly advance timeline based on verified playback
           if (hasRealAudioStartedRef.current && !isLoading) {
             const prev = currentTimeRef.current || 0;
             cur = prev + deltaSec;
           } else {
-            cur = (typeof pendingSeekRef.current === 'number' && pendingSeekRef.current > 0) ? pendingSeekRef.current : 0;
+            cur = currentTimeRef.current || 0;
           }
         } else {
-          // HTML5 audio is loading/buffering or not yet playing: do NOT advance timer artificially
-          cur = (typeof pendingSeekRef.current === 'number' && pendingSeekRef.current > 0) ? pendingSeekRef.current : (currentTimeRef.current || 0);
+          cur = currentTimeRef.current || 0;
         }
 
         const dur = durationRef.current || (currentTrackRef.current?.duration > 0 ? currentTrackRef.current.duration : 180);

@@ -88,9 +88,9 @@ export default function DesktopPlayerBar() {
 
   if (!currentTrack) return null;
 
-  const safeDuration = (typeof duration === 'number' && duration > 0 && isFinite(duration))
+  const safeDuration = (typeof duration === 'number' && duration > 5 && isFinite(duration))
     ? duration
-    : (currentTrack.duration > 0 ? currentTrack.duration : 180);
+    : (currentTrack.duration > 5 ? currentTrack.duration : 180);
 
   const isInitialBuffering = isLoading && (!currentTime || currentTime < 1);
   const displayTime = isScrubbing 

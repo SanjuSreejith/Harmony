@@ -147,35 +147,20 @@ export default function BackgroundDirectPlayer() {
             }
           }
         } else if (data.event === 'infoDelivery' && data.info) {
-          const trackExpectedDur = (typeof currentTrack?.duration === 'number' && currentTrack.duration > 0) ? currentTrack.duration : 180;
-          const reportedDur = typeof data.info.duration === 'number' ? data.info.duration : 0;
-
-          // Ad detection:
-          // Commercial pre-roll video ads on YouTube have short durations (< 45s) while real music tracks are > 55s
-          const isCommercialAd = Boolean(
-            data.info.adState === 1 ||
-            data.info.isAdPlaying ||
-            (reportedDur > 0 && reportedDur < 42 && trackExpectedDur > 55)
-          );
-
-          if (isCommercialAd) {
-            // Instantly mute commercial ad and fast-forward at 16x speed to finish in milliseconds
+          // If YouTube reports ad state actively playing
+          if (data.info.adState === 1 || data.info.isAdPlaying) {
             sendCommand('mute');
-            sendCommand('setPlaybackRate', [16]);
+            sendCommand('seekTo', [9999, true]);
             setIsLoading(true);
             return;
           }
 
-          // Real song is playing! Restore normal 1x playback speed and volume
-          if (data.info.playbackRate && data.info.playbackRate !== 1) {
-            sendCommand('setPlaybackRate', [1]);
-            if (!isMuted) {
-              sendCommand('unMute');
-              sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
-            }
+          if (!isMuted) {
+            sendCommand('unMute');
+            sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
           }
 
-          if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime)) {
+          if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime) && data.info.currentTime >= 0) {
             currentTimeRef.current = data.info.currentTime;
             setCurrentTime(data.info.currentTime);
             setIsLoading(false);
@@ -183,12 +168,11 @@ export default function BackgroundDirectPlayer() {
               window.dispatchEvent(new CustomEvent('harmoniq:direct-player-playing', { detail: data.info.currentTime }));
             }
           }
-          if (reportedDur > 0 && isFinite(reportedDur)) {
-            setDuration(reportedDur);
+          if (typeof data.info.duration === 'number' && data.info.duration > 15 && isFinite(data.info.duration)) {
+            setDuration(data.info.duration);
           }
         } else if (data.event === 'initialDelivery') {
           playerReadyRef.current = true;
-          // Keep loading spinner active until audio frames actually start playing
           sendCommand('unMute');
           sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
           const target = startSecRef.current || 0;
@@ -224,8 +208,8 @@ export default function BackgroundDirectPlayer() {
 
   const startSec = startSecRef.current || 0;
   const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
-  // Enhanced privacy-enhanced embed domain with strict ad and tracking blocking parameters
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}`;
+  // Standard high-reliability YouTube embed with full JavaScript postMessage API support
+  const embedUrl = `https://www.youtube.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}`;
 
   return (
     <div

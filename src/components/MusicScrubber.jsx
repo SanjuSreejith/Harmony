@@ -16,7 +16,7 @@ export default function MusicScrubber({
   const barRef = useRef(null);
 
   // Fallback to reasonable 3-minute duration if metadata not yet resolved so scrubber is always interactive
-  const safeDuration = (typeof duration === 'number' && duration > 0 && isFinite(duration)) ? duration : 180;
+  const safeDuration = (typeof duration === 'number' && duration > 5 && isFinite(duration)) ? duration : 180;
   
   // Guard: If track is loading and hasn't started playing, strictly lock display time to 0
   const isInitialBuffering = isLoading && (!currentTime || currentTime < 1);

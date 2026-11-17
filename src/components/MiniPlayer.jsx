@@ -18,7 +18,7 @@ export default function MiniPlayer() {
 
   if (!currentTrack) return null;
 
-  const safeDuration = duration > 0 ? duration : (currentTrack.duration > 0 ? currentTrack.duration : 180);
+  const safeDuration = duration > 5 ? duration : (currentTrack.duration > 5 ? currentTrack.duration : 180);
   const isInitialBuffering = isLoading && (!currentTime || currentTime < 1);
   const progressPercent = (safeDuration > 0 && !isInitialBuffering)
     ? Math.min(100, Math.max(0, (currentTime / safeDuration) * 100))
