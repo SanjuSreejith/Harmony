@@ -80,20 +80,35 @@ export default function SearchScreen() {
     setQuery(tag);
   }
 
+  const searchInputRef = useRef(null);
+
+  // Focus on search with '/' shortcut key
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.key === '/' && document.activeElement !== searchInputRef.current) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
-    <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-5">
+    <div className="pb-36 md:pb-12 pt-4 px-4 md:px-0 max-w-md md:max-w-none mx-auto space-y-5">
       {/* Header */}
       <div className="pt-2">
         <h1 className="text-2xl font-black text-white tracking-tight">Search</h1>
         <p className="text-xs text-slate-400 mt-0.5">
-          Find any song, artist, or video on YouTube (Ad-Free)
+          Find any song, artist, or video on YouTube (Ad-Free) • Press <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">/</kbd> to search
         </p>
       </div>
 
       {/* Search Input Bar */}
-      <div className="relative">
+      <div className="relative max-w-3xl">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
         <input
+          ref={searchInputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -145,7 +160,7 @@ export default function SearchScreen() {
             Top Results ({results.length})
           </p>
 
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 space-y-0">
             {results.map((track, idx) => {
               const isCurrent = currentTrack?.id === track.id;
               const isFav = isFavorite(track.id);

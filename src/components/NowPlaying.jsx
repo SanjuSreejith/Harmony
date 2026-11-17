@@ -242,8 +242,9 @@ export default function NowPlaying() {
         />
       )}
 
-      {/* Top Header Bar */}
-      <div className="relative z-10 px-5 pt-3 pb-2 flex items-center justify-between">
+      <div className="relative z-10 w-full max-w-xl mx-auto h-full flex flex-col justify-between overflow-y-auto no-scrollbar py-2">
+        {/* Top Header Bar */}
+        <div className="px-5 pt-1 pb-2 flex items-center justify-between">
         <button
           onClick={handleCollapse}
           className="w-10 h-10 rounded-full flex items-center justify-center text-slate-300 hover:text-white bg-white/5 active:scale-90 transition-transform"
@@ -649,5 +650,6 @@ export default function NowPlaying() {
         </div>
       </div>
     </div>
+  </div>
   );
 }

@@ -366,7 +366,7 @@ export default function HomeScreen() {
   ]);
 
   return (
-    <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-6">
+    <div className="pb-36 md:pb-12 pt-4 px-4 md:px-0 max-w-md md:max-w-none mx-auto space-y-6">
       {/* App Header & Greeting */}
       <div className="flex items-center justify-between pt-2">
         <div>
@@ -434,7 +434,7 @@ export default function HomeScreen() {
 
       {/* 1. Mood & Vibe Filter Pills */}
       <section>
-        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 py-1">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 py-1">
           {MOOD_FILTERS.map((m) => {
             const isSelected = activeMood === m.id;
             return (
@@ -537,7 +537,7 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.lastPlayedMix.tracks.map((track, idx) => (
               <div
                 key={`last-played-${track.id}-${idx}`}
@@ -581,7 +581,7 @@ export default function HomeScreen() {
             </h2>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.smartAIMix.map((track, idx) => (
               <div
                 key={`rl-mix-${track.id}-${idx}`}
@@ -625,7 +625,7 @@ export default function HomeScreen() {
             </h2>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {history.slice(0, 15).map((track) => (
               <div
                 key={`recent-${track.id}`}
@@ -673,7 +673,7 @@ export default function HomeScreen() {
             </p>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {affinity.frequentTracks.map((track, idx) => (
               <div
                 key={`freq-${track.id}-${idx}`}
@@ -727,7 +727,7 @@ export default function HomeScreen() {
             </p>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.languageMix.tracks.map((track, idx) => (
               <div
                 key={`lang-${track.id}-${idx}`}
@@ -778,7 +778,7 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.secondaryMix.tracks.map((track, idx) => (
               <div
                 key={`sec-lang-${track.id}-${idx}`}
@@ -827,7 +827,7 @@ export default function HomeScreen() {
             </p>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.artistMix.tracks.map((track, idx) => (
               <div
                 key={`art-${track.id}-${idx}`}
@@ -878,7 +878,7 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.genreMix.tracks.map((track, idx) => (
               <div
                 key={`genre-${track.id}-${idx}`}
@@ -929,7 +929,7 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.discoverMix.tracks.map((track, idx) => (
               <div
                 key={`discover-${track.id}-${idx}`}
@@ -983,7 +983,7 @@ export default function HomeScreen() {
             <p className="text-xs font-medium">Loading music from YouTube...</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {trendingTracks.map((track, idx) => {
               const isCurrent = currentTrack?.id === track.id;
               const downloaded = isDownloaded(track.id);
