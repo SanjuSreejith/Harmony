@@ -19,6 +19,7 @@ export default function SyncedVideoPlayer({
   const isPlayingRef = useRef(isPlaying);
   const intervalRef = useRef(null);
   const hasSeekedToStartRef = useRef(false);
+  const isAdActiveRef = useRef(false);
 
   function sendCommand(func, args = []) {
     if (iframeRef.current && iframeRef.current.contentWindow) {
@@ -82,15 +83,60 @@ export default function SyncedVideoPlayer({
         if (typeof event.data !== 'string') return;
         const data = JSON.parse(event.data);
 
+        const trackExpectedDur = (typeof track?.duration === 'number' && track.duration > 0) ? track.duration : 180;
+        const reportedDur = typeof data.info?.duration === 'number' ? data.info.duration : 0;
+        const reportedVideoId = data.info?.videoData?.video_id;
+
+        const isAdStarted = Boolean(
+          data.event === 'onAdStart' ||
+          data.info?.adState === 1 ||
+          data.info?.isAdPlaying === true ||
+          Boolean(data.info?.adVideoId) ||
+          (reportedVideoId && reportedVideoId !== track?.id) ||
+          (reportedDur > 0 && reportedDur < 45 && trackExpectedDur > 55)
+        );
+
+        const isAdEnded = Boolean(
+          data.event === 'onAdEnd' ||
+          data.info?.adState === 0 ||
+          data.info?.isAdPlaying === false ||
+          (reportedVideoId && reportedVideoId === track?.id && reportedDur >= Math.min(trackExpectedDur - 10, 50))
+        );
+
+        if (isAdStarted) {
+          isAdActiveRef.current = true;
+          sendCommand('mute');
+          sendCommand('setPlaybackRate', [2]);
+          sendCommand('seekTo', [reportedDur > 0 ? reportedDur : 9999, true]);
+          return;
+        } else if (isAdEnded) {
+          isAdActiveRef.current = false;
+          sendCommand('setPlaybackRate', [1]);
+          sendCommand('unMute');
+        }
+
         // State changes: 0 = ENDED, 1 = PLAYING, 2 = PAUSED, 3 = BUFFERING
         if (data.event === 'onStateChange') {
           if (data.info === 1) {
+            if (isAdActiveRef.current) {
+              sendCommand('mute');
+              sendCommand('setPlaybackRate', [2]);
+              sendCommand('seekTo', [9999, true]);
+              return;
+            }
             isPlayingRef.current = true;
             if (onPlayStateChange) onPlayStateChange(true);
           } else if (data.info === 2) {
             isPlayingRef.current = false;
             if (onPlayStateChange) onPlayStateChange(false);
           } else if (data.info === 0) {
+            if (isAdActiveRef.current) {
+              isAdActiveRef.current = false;
+              sendCommand('setPlaybackRate', [1]);
+              sendCommand('unMute');
+              sendCommand('playVideo');
+              return;
+            }
             if (onEnded) onEnded();
           }
         } else if (data.event === 'initialDelivery') {
@@ -103,7 +149,10 @@ export default function SyncedVideoPlayer({
             sendCommand('playVideo');
           }
         } else if (data.event === 'infoDelivery' && data.info) {
-          if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime)) {
+          if (data.info.playbackRate && data.info.playbackRate !== 1 && !isAdActiveRef.current) {
+            sendCommand('setPlaybackRate', [1]);
+          }
+          if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime) && !isAdActiveRef.current) {
             // Ignore transient 0 time update on initial boot when seeking to startSec > 2
             if (startSec > 2 && !hasSeekedToStartRef.current && data.info.currentTime < 1) {
               return;
@@ -114,7 +163,7 @@ export default function SyncedVideoPlayer({
             currentTimeRef.current = data.info.currentTime;
             if (onTimeUpdate) onTimeUpdate(data.info.currentTime);
           }
-          if (typeof data.info.duration === 'number' && data.info.duration > 0 && isFinite(data.info.duration)) {
+          if (typeof data.info.duration === 'number' && data.info.duration > 45 && isFinite(data.info.duration)) {
             if (onDurationChange) onDurationChange(data.info.duration);
           }
         }
@@ -123,7 +172,7 @@ export default function SyncedVideoPlayer({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onEnded, onTimeUpdate, onPlayStateChange, onDurationChange, isPlaying]);
+  }, [onEnded, onTimeUpdate, onPlayStateChange, onDurationChange, isPlaying, track?.id, track?.duration]);
 
   // Listen to interactive timeline seek requests from MusicScrubber
   useEffect(() => {
@@ -148,8 +197,9 @@ export default function SyncedVideoPlayer({
     );
   }
 
-  // Stable embed URL that never changes while video is playing (prevents iframe reloading / resetting to 0)
-  const embedUrl = `https://www.youtube.com/embed/${track.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=1&modestbranding=1&rel=0&start=${startSec}`;
+  const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
+  // Stable privacy-enhanced embed URL that never changes while video is playing
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${track.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=1&modestbranding=1&rel=0&iv_load_policy=3&start=${startSec}${originParam}`;
 
   return (
     <div className="w-full max-w-[390px] aspect-video mx-auto my-auto rounded-3xl overflow-hidden bg-black shadow-2xl border border-white/15 relative flex flex-col items-center justify-center">
