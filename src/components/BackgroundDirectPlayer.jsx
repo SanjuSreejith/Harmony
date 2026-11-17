@@ -170,6 +170,18 @@ export default function BackgroundDirectPlayer() {
     return () => window.removeEventListener('message', handleMessage);
   }, [shouldBeActive, handleTrackEnded, isPlaying]);
 
+  // Keep background audio active when tab is minimized or screen is locked
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.hidden && shouldBeActive && isPlaying) {
+        // Prevent browser from throttling or pausing audio upon minimize
+        sendCommand('playVideo');
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [shouldBeActive, isPlaying]);
+
   if (!shouldBeActive || !currentTrack) return null;
 
   const startSec = startSecRef.current || 0;
@@ -181,10 +193,10 @@ export default function BackgroundDirectPlayer() {
     <div
       style={{
         position: 'fixed',
-        bottom: -180,
-        right: -180,
-        width: 200,
-        height: 200,
+        bottom: 0,
+        right: 0,
+        width: 1,
+        height: 1,
         opacity: 0.01,
         pointerEvents: 'none',
         zIndex: -10,
