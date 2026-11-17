@@ -110,9 +110,10 @@ export default function NowPlaying() {
     window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: nextMode }));
   }
 
-  // Swipe gesture state
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
+  // Swipe gesture state (Targeted to specific areas)
+  const artworkTouchStartX = useRef(0);
+  const artworkTouchStartY = useRef(0);
+  const headerTouchStartY = useRef(0);
 
   useEffect(() => {
     if (!isSeeking) {
@@ -215,10 +216,6 @@ export default function NowPlaying() {
   }
 
   // Touch Swipe Handlers for mobile gestures (Targeted to specific areas)
-  const artworkTouchStartX = useRef(0);
-  const artworkTouchStartY = useRef(0);
-  const headerTouchStartY = useRef(0);
-
   function handleArtworkTouchStart(e) {
     artworkTouchStartX.current = e.touches[0].clientX;
     artworkTouchStartY.current = e.touches[0].clientY;
