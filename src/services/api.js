@@ -29,6 +29,11 @@ let cachedServer = null;
 let lastPingTime = 0;
 let isResolving = false;
 
+function isLocalhost() {
+  if (typeof window === 'undefined') return true;
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+}
+
 // Store explicit server mode selection
 export function setServerSelection(mode, customUrl = null) {
   if (typeof localStorage === 'undefined') return;
@@ -167,8 +172,8 @@ export async function testServerConnection(targetUrl = null) {
 export async function resolveServer(force = false) {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
-  // If in web browser (PC localhost or LAN browser)
-  if (typeof window !== 'undefined' && !isNative) {
+  // If in web browser on localhost / 127.0.0.1, use relative API proxy
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return '';
   }
 
@@ -269,7 +274,7 @@ export async function getApiBase() {
 
 export function getServerUrl() {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
-  if (typeof window !== 'undefined' && !isNative) {
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return '';
   }
   const selection = getServerSelection();
@@ -455,8 +460,8 @@ export async function getPlayableAudioStreamUrl(videoId, quality = 'best') {
 
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
-  // In web browser, stream relative immediately for 0ms delay and no iframe switch
-  if (typeof window !== 'undefined' && !isNative) {
+  // In web browser on localhost, stream relative immediately for 0ms delay
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return `/api/stream/${videoId}?quality=${quality}`;
   }
 
@@ -471,7 +476,7 @@ export async function getPlayableAudioStreamUrl(videoId, quality = 'best') {
 
 export function getAudioStreamUrl(videoId, quality = 'best') {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
-  if (typeof window !== 'undefined' && !isNative) {
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return `/api/stream/${videoId}?quality=${quality}`;
   }
   const base = getServerUrl();
@@ -480,7 +485,7 @@ export function getAudioStreamUrl(videoId, quality = 'best') {
 
 export function getVideoStreamUrl(videoId) {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
-  if (typeof window !== 'undefined' && !isNative) {
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return `/api/stream/video/${videoId}`;
   }
   const base = getServerUrl();
