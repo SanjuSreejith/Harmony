@@ -19,10 +19,12 @@ import {
   History,
   Plus,
   WifiOff,
-  RotateCw
+  RotateCw,
+  Cloud,
+  Laptop
 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
-import { getTrendingTracks, getRecommendations } from '../services/api';
+import { getTrendingTracks, getRecommendations, getServerSelection, setServerSelection, SERVER_MODES } from '../services/api';
 import { ALL_INDIAN_LANGUAGES } from '../constants/languages';
 import AddToPlaylistModal from './AddToPlaylistModal';
 import { reRankRecommendations } from '../services/reinforcementLearning';
@@ -59,8 +61,33 @@ export default function HomeScreen() {
     favorites,
     downloadedTracks,
     isInstalled,
-    triggerInstall
+    triggerInstall,
+    showToast
   } = usePlayer();
+
+  const [serverMode, setServerMode] = useState(() => getServerSelection().mode || SERVER_MODES.AUTO);
+
+  useEffect(() => {
+    function onServerChanged(e) {
+      if (e.detail) setServerMode(e.detail);
+    }
+    window.addEventListener('harmoniq:server-mode-changed', onServerChanged);
+    return () => window.removeEventListener('harmoniq:server-mode-changed', onServerChanged);
+  }, []);
+
+  function handleQuickToggleServer() {
+    const nextMode = serverMode === SERVER_MODES.CLOUD ? SERVER_MODES.USB : SERVER_MODES.CLOUD;
+    setServerSelection(nextMode);
+    setServerMode(nextMode);
+    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: nextMode }));
+    if (showToast) {
+      if (nextMode === SERVER_MODES.CLOUD) {
+        showToast('Switched to 24/7 Cloud Server (Render) ☁️', 'info');
+      } else {
+        showToast('Switched to Local PC Server (LAN/USB) 💻', 'info');
+      }
+    }
+  }
 
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
@@ -327,7 +354,8 @@ export default function HomeScreen() {
       if (autoApplyTimerRef.current) clearTimeout(autoApplyTimerRef.current);
     };
   }, [
-    preferences,
+    preferences?.languages?.join(','),
+    preferences?.genres?.join(','),
     activeMood,
     selectedLanguage
   ]);
@@ -381,7 +409,39 @@ export default function HomeScreen() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Quick Server Switcher Badge (1-Tap Cloud / PC Switch) */}
+          <button
+            onClick={handleQuickToggleServer}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+              serverMode === SERVER_MODES.CLOUD
+                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/25'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+            }`}
+            title="Click to toggle between 24/7 Cloud Server (Render) and Local PC Server"
+          >
+            {serverMode === SERVER_MODES.CLOUD ? (
+              <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+            ) : (
+              <Laptop className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+            <span className="text-[11px] font-bold">
+              {serverMode === SERVER_MODES.CLOUD ? 'Cloud' : (serverMode === SERVER_MODES.AUTO ? 'Auto' : 'PC')}
+            </span>
+          </button>
+
+          {/* 1-Tap Compact Install Button in Header */}
+          {!isInstalled && (
+            <button
+              onClick={triggerInstall}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold active:scale-95 transition-all shadow-sm"
+              title="Install Web App"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="text-[11px]">Install</span>
+            </button>
+          )}
+
           {/* Subtle Refresh Button */}
           <button
             onClick={handleManualRefresh}
@@ -410,27 +470,6 @@ export default function HomeScreen() {
           </button>
         </div>
       </div>
-
-      {/* PWA 1-Tap Install Card for Mobile & Desktop */}
-      {!isInstalled && (
-        <section className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-indigo-500/15 border border-emerald-500/25 flex items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
-              <Download className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">Install Harmoniq App</p>
-              <p className="text-[10px] text-slate-400 truncate">1-tap standalone web app with lockscreen controls</p>
-            </div>
-          </div>
-          <button
-            onClick={triggerInstall}
-            className="px-3.5 py-1.5 rounded-xl bg-emerald-400 text-black text-xs font-bold active:scale-95 transition-transform flex-shrink-0 shadow-md hover:bg-emerald-300"
-          >
-            Install
-          </button>
-        </section>
-      )}
 
       {/* 1. Mood & Vibe Filter Pills */}
       <section>

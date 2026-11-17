@@ -28,6 +28,7 @@ export default function BackgroundDirectPlayer() {
   const playerReadyRef = useRef(false);
   const timerRef = useRef(null);
   const startSecRef = useRef(0);
+  const currentTimeRef = useRef(0);
 
   const isOfflineTrack = Boolean(isDownloaded && currentTrack && isDownloaded(currentTrack.id));
 
@@ -36,9 +37,8 @@ export default function BackgroundDirectPlayer() {
   const shouldBeActive = Boolean(useDirectPlayer && currentTrack && !isOfflineTrack && !isVideoMode);
 
   useEffect(() => {
-    if (typeof currentTime === 'number' && isFinite(currentTime) && currentTime > 0) {
-      startSecRef.current = Math.floor(currentTime);
-    }
+    // ALWAYS reset start position to 0 when a new song is loaded so it never starts at 4:00
+    startSecRef.current = 0;
   }, [currentTrack?.id]);
 
   function sendCommand(func, args = []) {
@@ -133,13 +133,20 @@ export default function BackgroundDirectPlayer() {
           } else if (data.info === 3) {
             setIsLoading(true);
           } else if (data.info === 0) {
-            console.log('[BackgroundDirectPlayer] Track ended, auto-advancing to next song');
+            // Guard: Prevent premature skips if song just started
+            const currentDur = (typeof currentTrack?.duration === 'number' && currentTrack.duration > 0) ? currentTrack.duration : 180;
+            if (currentTimeRef.current < Math.min(currentDur - 5, 20) && currentDur > 30) {
+              console.warn('[BackgroundDirectPlayer] Ignored premature track-ended event');
+              return;
+            }
+            console.log('[BackgroundDirectPlayer] Track ended normally, auto-advancing to next song');
             if (typeof handleTrackEnded === 'function') {
               handleTrackEnded();
             }
           }
         } else if (data.event === 'infoDelivery' && data.info) {
           if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime)) {
+            currentTimeRef.current = data.info.currentTime;
             setCurrentTime(data.info.currentTime);
           }
           if (typeof data.info.duration === 'number' && data.info.duration > 0 && isFinite(data.info.duration)) {
@@ -150,7 +157,7 @@ export default function BackgroundDirectPlayer() {
           setIsLoading(false);
           sendCommand('unMute');
           sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
-          const target = startSecRef.current || (typeof currentTime === 'number' && isFinite(currentTime) && currentTime > 0 ? Math.floor(currentTime) : 0);
+          const target = startSecRef.current || 0;
           if (target > 0) {
             sendCommand('seekTo', [target, true]);
           }
@@ -165,7 +172,7 @@ export default function BackgroundDirectPlayer() {
 
   if (!shouldBeActive || !currentTrack) return null;
 
-  const startSec = startSecRef.current || (typeof currentTime === 'number' && isFinite(currentTime) && currentTime > 0 ? Math.floor(currentTime) : 0);
+  const startSec = startSecRef.current || 0;
   const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
   const embedUrl = `https://www.youtube.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&start=${startSec}${originParam}`;
 

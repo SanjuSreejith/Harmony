@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Home,
   Search,
@@ -19,6 +19,7 @@ import {
   DownloadCloud
 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
+import { getServerSelection, setServerSelection, SERVER_MODES } from '../services/api';
 
 export default function DesktopSidebar({ activeTab, setActiveTab }) {
   const {
@@ -31,8 +32,30 @@ export default function DesktopSidebar({ activeTab, setActiveTab }) {
     setShowPreferencesModal,
     setShowSettingsModal,
     isInstalled,
-    triggerInstall
+    triggerInstall,
+    showToast
   } = usePlayer();
+
+  const [serverMode, setServerMode] = useState(() => getServerSelection().mode || SERVER_MODES.AUTO);
+
+  useEffect(() => {
+    function onServerChanged(e) {
+      if (e.detail) setServerMode(e.detail);
+    }
+    window.addEventListener('harmoniq:server-mode-changed', onServerChanged);
+    return () => window.removeEventListener('harmoniq:server-mode-changed', onServerChanged);
+  }, []);
+
+  function handleSwitchMode(mode) {
+    setServerSelection(mode);
+    setServerMode(mode);
+    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: mode }));
+    if (mode === SERVER_MODES.CLOUD) {
+      if (showToast) showToast('Switched to 24/7 Cloud Server (Render) ☁️', 'info');
+    } else {
+      if (showToast) showToast('Switched to Local PC Server (LAN/USB) 💻', 'info');
+    }
+  }
 
   const mainNavItems = [
     { id: 'home', label: 'Home', icon: Home },
@@ -201,6 +224,57 @@ export default function DesktopSidebar({ activeTab, setActiveTab }) {
             <div className="flex justify-between items-center text-[10px]">
               <span>Like / Mute</span>
               <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono">L / M</kbd>
+            </div>
+          </div>
+        </div>
+
+        {/* 1-Click Server Switcher: PC Local vs 24/7 Cloud */}
+        <div className="pt-2">
+          <div className="p-2.5 rounded-xl bg-white/[0.04] border border-white/5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-white">
+                {serverMode === SERVER_MODES.CLOUD ? (
+                  <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+                ) : (
+                  <Laptop className="w-3.5 h-3.5 text-emerald-400" />
+                )}
+                <span>Server Mode</span>
+              </div>
+              <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
+                serverMode === SERVER_MODES.CLOUD
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              }`}>
+                {serverMode === SERVER_MODES.CLOUD ? '24/7 Cloud' : (serverMode === SERVER_MODES.AUTO ? 'Auto' : 'PC LAN')}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+              <button
+                onClick={() => handleSwitchMode(SERVER_MODES.CLOUD)}
+                className={`py-1.5 px-2 rounded-lg font-bold transition-all flex items-center justify-center gap-1 ${
+                  serverMode === SERVER_MODES.CLOUD
+                    ? 'bg-cyan-400 text-black shadow-md'
+                    : 'bg-white/5 text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+                title="Connect to 24/7 Render Cloud Server (works everywhere without PC)"
+              >
+                <Cloud className="w-3 h-3" />
+                <span>Cloud</span>
+              </button>
+
+              <button
+                onClick={() => handleSwitchMode(SERVER_MODES.USB)}
+                className={`py-1.5 px-2 rounded-lg font-bold transition-all flex items-center justify-center gap-1 ${
+                  serverMode === SERVER_MODES.USB || serverMode === SERVER_MODES.WIFI
+                    ? 'bg-emerald-400 text-black shadow-md'
+                    : 'bg-white/5 text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+                title="Connect to Local PC Server (Ultra-low latency streaming)"
+              >
+                <Laptop className="w-3 h-3" />
+                <span>PC Server</span>
+              </button>
             </div>
           </div>
         </div>
