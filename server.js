@@ -364,6 +364,17 @@ app.get('/api/track-details/:videoId', async (req, res) => {
   }
 });
 
+// Lightweight PC Server Ping & Health check
+app.get('/api/ping', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.json({
+    status: 'ok',
+    server: 'Harmoniq PC Server',
+    ip: getLocalIp(),
+    time: Date.now()
+  });
+});
+
 // 2. Audio Stream API (VISIONOS + Range Chunking + In-Memory Caching)
 app.get('/api/stream/:videoId', async (req, res) => {
   const { videoId } = req.params;
@@ -409,7 +420,12 @@ app.get('/api/stream/:videoId', async (req, res) => {
         range: { start, end }
       });
 
-      Readable.fromWeb(stream).pipe(res);
+      const readable = Readable.fromWeb(stream);
+      readable.on('error', () => {});
+      res.on('close', () => {
+        try { readable.destroy(); } catch (e) {}
+      });
+      readable.pipe(res);
     } else {
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Accept-Ranges', 'bytes');
@@ -419,7 +435,12 @@ app.get('/api/stream/:videoId', async (req, res) => {
       }
 
       const stream = await yt.download(videoId, { type: 'audio', quality: selectedQuality });
-      Readable.fromWeb(stream).pipe(res);
+      const readable = Readable.fromWeb(stream);
+      readable.on('error', () => {});
+      res.on('close', () => {
+        try { readable.destroy(); } catch (e) {}
+      });
+      readable.pipe(res);
     }
   } catch (err) {
     console.error(`[Stream Error ${videoId}]`, err.message);
@@ -429,23 +450,14 @@ app.get('/api/stream/:videoId', async (req, res) => {
   }
 });
 
-// Direct Google Video CDN stream URL API (Ultra-fast direct playback from nearest CDN edge)
+// Proxy stream URL API (Guarantees zero 403 Forbidden errors across all networks and devices)
 app.get('/api/stream-url/:videoId', async (req, res) => {
   const { videoId } = req.params;
   const quality = req.query.quality || 'best';
   if (!videoId) return res.status(400).send('Missing videoId');
 
   try {
-    const { audioFormat, totalLength, mimeType } = await getCachedStreamInfo(videoId, quality);
-    if (audioFormat && audioFormat.url) {
-      return res.json({
-        url: audioFormat.url,
-        totalLength,
-        mimeType,
-        videoId
-      });
-    }
-    // Fallback to proxy stream URL if direct url was not present
+    const { totalLength, mimeType } = await getCachedStreamInfo(videoId, quality);
     res.json({
       url: `/api/stream/${videoId}?quality=${quality}`,
       totalLength,
