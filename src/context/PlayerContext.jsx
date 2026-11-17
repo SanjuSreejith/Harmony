@@ -112,6 +112,8 @@ export function PlayerProvider({ children }) {
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
   const [playbackError, setPlaybackError] = useState(null);
   const [useDirectPlayer, setUseDirectPlayer] = useState(false);
+  const useDirectPlayerRef = useRef(false);
+  useEffect(() => { useDirectPlayerRef.current = useDirectPlayer; }, [useDirectPlayer]);
 
   // Active Indian language filter on Home
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
@@ -504,7 +506,7 @@ export function PlayerProvider({ children }) {
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.value = 20; // 20 Hz inaudible sub-carrier
-      gain.gain.value = 0.00015; // Inaudible to humans (-76 dB), real non-zero PCM frames to Chrome
+      gain.gain.value = 0.005; // 20 Hz sub-carrier at -46 dB: activates browser's audible keepalive threshold (> -60dB) to prevent tab throttling, while physically inaudible on speakers/headphones
       osc.connect(gain);
       gain.connect(ctx.destination);
 
@@ -757,17 +759,28 @@ export function PlayerProvider({ children }) {
     audio.crossOrigin = 'anonymous';
     audioRef.current = audio;
 
-    const handlePlay = () => setIsPlaying(true);
+    const handlePlay = () => {
+      if (useDirectPlayerRef.current) return;
+      setIsPlaying(true);
+    };
     const handlePause = () => {
+      if (useDirectPlayerRef.current) return;
       setIsPlaying(false);
       if (audio && !isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
         currentTimeRef.current = audio.currentTime;
         setCurrentTime(audio.currentTime);
       }
     };
-    const handleWaiting = () => setIsLoading(true);
-    const handleStalled = () => setIsLoading(true);
+    const handleWaiting = () => {
+      if (useDirectPlayerRef.current) return;
+      setIsLoading(true);
+    };
+    const handleStalled = () => {
+      if (useDirectPlayerRef.current) return;
+      setIsLoading(true);
+    };
     const handleCanPlay = () => {
+      if (useDirectPlayerRef.current) return;
       if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
         try {
           audio.currentTime = pendingSeekRef.current;
@@ -776,6 +789,7 @@ export function PlayerProvider({ children }) {
       }
     };
     const handlePlaying = () => {
+      if (useDirectPlayerRef.current) return;
       hasRealAudioStartedRef.current = true;
       setHasRealAudioStarted(true);
       setIsLoading(false);
@@ -858,12 +872,14 @@ export function PlayerProvider({ children }) {
     };
 
     const handleEnded = () => {
+      if (useDirectPlayerRef.current) return;
       if (handleTrackEndedRef.current) {
         handleTrackEndedRef.current();
       }
     };
 
     const handleError = (e) => {
+      if (useDirectPlayerRef.current) return;
       console.warn('[Audio Error on HTML5 audio element]', e);
       if (currentTrackRef.current) {
         // If HTML5 audio stream fails (e.g. Render cold start or network glitch),
@@ -884,9 +900,9 @@ export function PlayerProvider({ children }) {
           } catch (err) {}
         }
         setUseDirectPlayer(true);
+        useDirectPlayerRef.current = true;
         setIsPlaying(true);
         setIsLoading(true);
-        showToast('Connecting direct cloud audio stream...', 'info');
         return;
       }
       setIsLoading(false);
@@ -1200,7 +1216,29 @@ export function PlayerProvider({ children }) {
         } catch (e) {}
       }
 
-      setUseDirectPlayer(false);
+      if (streamUrl) {
+        setUseDirectPlayer(false);
+        useDirectPlayerRef.current = false;
+      } else if (useDirectPlayerRef.current) {
+        // Direct player active: smoothly transition tracks with zero delay and no server timeout!
+        startAudibleKeepAlive();
+        if (audioRef.current) {
+          try {
+            if (audibleKeepAliveRef.current?.stream) {
+              audioRef.current.removeAttribute('src');
+              audioRef.current.srcObject = audibleKeepAliveRef.current.stream;
+            } else {
+              audioRef.current.srcObject = null;
+              audioRef.current.src = SILENT_AUDIO_URI;
+              audioRef.current.loop = true;
+            }
+            audioRef.current.play().catch(() => {});
+          } catch (e) {}
+        }
+        setIsPlaying(true);
+        setIsLoading(true);
+        return;
+      }
 
       if (!streamUrl) {
         try {
@@ -1301,9 +1339,9 @@ export function PlayerProvider({ children }) {
             } catch (e) {}
           }
           setUseDirectPlayer(true);
+          useDirectPlayerRef.current = true;
           setIsPlaying(true);
           setIsLoading(true);
-          showToast('Connecting direct cloud audio stream...', 'info');
           return;
         }
       } else {

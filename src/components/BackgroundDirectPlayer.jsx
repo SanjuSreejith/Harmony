@@ -253,7 +253,7 @@ export default function BackgroundDirectPlayer() {
             sendCommand('setPlaybackRate', [1]);
           }
 
-          if (!isMuted && !isAdActiveRef.current) {
+          if (!isMuted && !isAdActiveRef.current && ytPlayerStateRef.current === 1 && (reportedDur >= Math.min(trackExpectedDur - 10, 50) || reportedDur === 0)) {
             sendCommand('unMute');
             sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
           }
@@ -281,10 +281,7 @@ export default function BackgroundDirectPlayer() {
           }
         } else if (data.event === 'initialDelivery') {
           playerReadyRef.current = true;
-          if (!isAdActiveRef.current && !isMuted) {
-            sendCommand('unMute');
-            sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
-          }
+          // Keep initially muted until real song playback is confirmed to guarantee 0 ad sound leakage
           const target = startSecRef.current || 0;
           if (target > 0) {
             sendCommand('seekTo', [target, true]);
@@ -326,8 +323,8 @@ export default function BackgroundDirectPlayer() {
   const startSec = startSecRef.current || 0;
   const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
   const widgetReferrer = typeof window !== 'undefined' && window.location.href ? `&widget_referrer=${encodeURIComponent(window.location.href)}` : '';
-  // Enhanced privacy-enhanced embed domain with strict ad and tracking blocking parameters
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
+  // Enhanced privacy-enhanced embed domain with pre-muted autoplay for instant ad suppression
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
 
   return (
     <div
@@ -335,11 +332,12 @@ export default function BackgroundDirectPlayer() {
         position: 'fixed',
         top: 0,
         left: 0,
-        width: '100vw',
-        height: '100vh',
-        opacity: 0.015,
+        width: '100%',
+        height: '100%',
+        opacity: 1,
         pointerEvents: 'none',
-        zIndex: 0,
+        zIndex: -9999,
+        visibility: 'visible',
         overflow: 'hidden'
       }}
       aria-hidden="true"
@@ -349,7 +347,7 @@ export default function BackgroundDirectPlayer() {
         key={currentTrack.id}
         src={embedUrl}
         title="Harmoniq Audio Engine"
-        allow="autoplay; encrypted-media; clipboard-write; picture-in-picture; web-share"
+        allow="autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
         importance="high"
         style={{ width: '100%', height: '100%', border: 'none' }}
       />
