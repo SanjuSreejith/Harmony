@@ -471,7 +471,8 @@ export function PlayerProvider({ children }) {
 
   // Master live playback heartbeat for accurate timeline sync across ALL playback engines
   useEffect(() => {
-    if (!isPlaying) return;
+    // Strictly don't tick or advance the scrubber while song is still loading or paused
+    if (!isPlaying || isLoading) return;
 
     let lastTickTime = Date.now();
     let tickCount = 0;
@@ -494,10 +495,13 @@ export function PlayerProvider({ children }) {
             durationRef.current = audio.duration;
             setDuration(audio.duration);
           }
-        } else {
-          // 2. Direct player / background stream active: advance timer smoothly using wall clock delta!
+        } else if (useDirectPlayer) {
+          // 2. Direct player active: only advance timer if actually playing (not loading/buffering)
           const prev = currentTimeRef.current || 0;
           cur = prev + deltaSec;
+        } else {
+          // HTML5 audio is loading/buffering or not yet playing: do NOT advance timer artificially
+          cur = currentTimeRef.current || 0;
         }
 
         const dur = durationRef.current || (currentTrackRef.current?.duration > 0 ? currentTrackRef.current.duration : 180);
@@ -533,7 +537,7 @@ export function PlayerProvider({ children }) {
     }, 250);
 
     return () => clearInterval(interval);
-  }, [isPlaying]);
+  }, [isPlaying, isLoading, useDirectPlayer]);
 
   // Handle native Android notification media actions and Foreground Service events
   useEffect(() => {
