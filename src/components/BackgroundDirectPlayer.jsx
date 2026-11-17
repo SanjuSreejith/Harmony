@@ -174,7 +174,8 @@ export default function BackgroundDirectPlayer() {
 
   const startSec = startSecRef.current || 0;
   const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
-  const embedUrl = `https://www.youtube.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&start=${startSec}${originParam}`;
+  // Enhanced privacy-enhanced embed domain with strict ad and tracking blocking parameters
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}`;
 
   return (
     <div
