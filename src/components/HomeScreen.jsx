@@ -396,29 +396,29 @@ export default function HomeScreen() {
   return (
     <div className="pb-36 md:pb-12 pt-4 px-4 md:px-0 max-w-md md:max-w-none mx-auto space-y-6">
       {/* App Header & Greeting */}
-      <div className="flex items-center justify-between pt-2">
-        <div>
+      <div className="flex items-center justify-between pt-2 gap-2">
+        <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+            <span className="text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
               Harmoniq
             </span>
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
             {greeting}
           </h1>
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
           {/* Quick Server Switcher Badge (1-Tap Cloud / PC Switch) */}
           <button
             onClick={handleQuickToggleServer}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm active:scale-95 ${
               serverMode === SERVER_MODES.CLOUD
                 ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/25'
                 : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
             }`}
-            title="Click to toggle between 24/7 Cloud Server (Render) and Local PC Server"
+            title="Click to toggle between 24/7 Cloud Server and Local PC Server"
           >
             {serverMode === SERVER_MODES.CLOUD ? (
               <Cloud className="w-3.5 h-3.5 text-cyan-400" />
@@ -434,7 +434,7 @@ export default function HomeScreen() {
           {!isInstalled && (
             <button
               onClick={triggerInstall}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold active:scale-95 transition-all shadow-sm"
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold active:scale-95 transition-all shadow-sm"
               title="Install Web App"
             >
               <Download className="w-3.5 h-3.5" />
@@ -445,28 +445,28 @@ export default function HomeScreen() {
           {/* Subtle Refresh Button */}
           <button
             onClick={handleManualRefresh}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/5 active:scale-95 transition-all"
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
             title="Refresh Recommendations"
           >
-            <RotateCw className={`w-4 h-4 text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <RotateCw className={`w-3.5 h-3.5 text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
 
           {/* Preferences Button */}
           <button
             onClick={() => setShowPreferencesModal(true)}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/5 active:scale-95 transition-all"
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
             title="Music Preferences & Languages"
           >
-            <Sliders className="w-4 h-4 text-emerald-400" />
+            <Sliders className="w-3.5 h-3.5 text-emerald-400" />
           </button>
 
           {/* Settings Button */}
           <button
             onClick={() => setShowSettingsModal(true)}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/5 active:scale-95 transition-all"
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
             title="App Settings"
           >
-            <Settings className="w-4 h-4 text-slate-300" />
+            <Settings className="w-3.5 h-3.5 text-slate-300" />
           </button>
         </div>
       </div>

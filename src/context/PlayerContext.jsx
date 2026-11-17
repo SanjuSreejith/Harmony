@@ -52,11 +52,29 @@ export function PlayerProvider({ children }) {
   const bassFilterRef = useRef(null);
   const trebleFilterRef = useRef(null);
 
-  // Playback state
-  const [currentTrack, setCurrentTrack] = useState(null);
+  // Playback state with persistent session resume
+  const [currentTrack, setCurrentTrack] = useState(() => {
+    try {
+      const saved = localStorage.getItem('musicit_last_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.track?.id) return parsed.track;
+      }
+    } catch {}
+    return null;
+  });
   const currentTrackRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTimeState] = useState(0);
+  const [currentTime, setCurrentTimeState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('musicit_last_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.position === 'number' && parsed.position > 0) return parsed.position;
+      }
+    } catch {}
+    return 0;
+  });
   const currentTimeRef = useRef(0);
   const setCurrentTime = (val) => {
     const safe = typeof val === 'number' && isFinite(val) ? val : 0;
@@ -64,7 +82,16 @@ export function PlayerProvider({ children }) {
     setCurrentTimeState(safe);
   };
 
-  const [duration, setDurationState] = useState(0);
+  const [duration, setDurationState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('musicit_last_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.duration === 'number' && parsed.duration > 0) return parsed.duration;
+      }
+    } catch {}
+    return 0;
+  });
   const durationRef = useRef(0);
   const setDuration = (val) => {
     const safe = typeof val === 'number' && isFinite(val) && val > 0 ? val : 0;
@@ -368,6 +395,42 @@ export function PlayerProvider({ children }) {
   useEffect(() => {
     localStorage.setItem('musicit_history', JSON.stringify(history.slice(0, 50)));
   }, [history]);
+
+  // Persist current listening session (track and exact playback timestamp) so user can resume exactly where they left off
+  useEffect(() => {
+    if (currentTrack?.id) {
+      try {
+        localStorage.setItem(
+          'musicit_last_session',
+          JSON.stringify({
+            track: currentTrack,
+            position: Math.floor(currentTimeRef.current || currentTime || 0),
+            duration: Math.floor(durationRef.current || duration || 0),
+            timestamp: Date.now()
+          })
+        );
+      } catch (e) {}
+    }
+  }, [currentTrack?.id, isPlaying]);
+
+  // Periodic saver while track is playing every 5 seconds
+  useEffect(() => {
+    if (!isPlaying || !currentTrack?.id) return;
+    const interval = setInterval(() => {
+      try {
+        localStorage.setItem(
+          'musicit_last_session',
+          JSON.stringify({
+            track: currentTrack,
+            position: Math.floor(currentTimeRef.current || currentTime || 0),
+            duration: Math.floor(durationRef.current || duration || 0),
+            timestamp: Date.now()
+          })
+        );
+      } catch (e) {}
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isPlaying, currentTrack?.id]);
 
   // Load offline downloads on mount
   useEffect(() => {
