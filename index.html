@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Harmoniq</title>
+    
+    <!-- PWA & Mobile Meta Tags -->
+    <meta name="description" content="Completely free, ad-free YouTube music streaming mobile app with background playback and lockscreen controls." />
+    <meta name="theme-color" content="#090d16" />
+    <meta name="background-color" content="#08080c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Harmoniq" />
+    <link rel="manifest" href="/manifest.json" />
+    
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+
+    <style>
+      /* Prevent elastic pull-to-refresh on mobile iOS/Android */
+      html, body {
+        overflow-x: hidden;
+        overscroll-behavior-y: none;
+        -webkit-tap-highlight-color: transparent;
+        background-color: #08080c;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      /* Safe area insets for notches */
+      :root {
+        --sat: env(safe-area-inset-top, 0px);
+        --sab: env(safe-area-inset-bottom, 0px);
+      }
+    </style>
+  </head>
+  <body class="bg-[#08080c] text-white antialiased select-none">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Register PWA service worker for offline support and mobile installability
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(err => {
+            console.log('SW registration note:', err.message);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
