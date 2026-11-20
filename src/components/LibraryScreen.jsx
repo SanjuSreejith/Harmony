@@ -50,7 +50,7 @@ export default function LibraryScreen() {
   // 1. Viewing Downloaded / Offline Songs
   if (activeView === 'downloads') {
     return (
-      <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-4">
+      <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-4">
         <button
           onClick={() => setActiveView('main')}
           className="text-xs text-emerald-400 font-semibold flex items-center gap-1 hover:underline"
@@ -137,7 +137,7 @@ export default function LibraryScreen() {
       : { totalInteractions: 0, satisfactionRate: 100, learningPhase: 'Active', topGenres: [], topArtists: [] };
 
     return (
-      <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-4 animate-in fade-in">
+      <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-4 animate-in fade-in">
         <button
           onClick={() => setActiveView('main')}
           className="text-xs text-emerald-400 font-semibold flex items-center gap-1 hover:underline"
@@ -245,7 +245,7 @@ export default function LibraryScreen() {
   // 2. Viewing Liked Songs
   if (activeView === 'favorites') {
     return (
-      <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-4">
+      <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-4">
         <button
           onClick={() => setActiveView('main')}
           className="text-xs text-emerald-400 font-semibold flex items-center gap-1 hover:underline"
@@ -330,7 +330,7 @@ export default function LibraryScreen() {
     }
 
     return (
-      <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-4">
+      <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-4">
         <button
           onClick={() => setActiveView('main')}
           className="text-xs text-emerald-400 font-semibold flex items-center gap-1 hover:underline"
@@ -422,7 +422,7 @@ export default function LibraryScreen() {
 
   // 4. Main Library View
   return (
-    <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-6">
+    <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between pt-2">
         <h1 className="text-2xl font-black text-white tracking-tight">Your Library</h1>

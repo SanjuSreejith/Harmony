@@ -12,6 +12,8 @@ import SleepTimerModal from './components/SleepTimerModal';
 import PreferencesModal from './components/PreferencesModal';
 import SettingsModal from './components/SettingsModal';
 import BackgroundDirectPlayer from './components/BackgroundDirectPlayer';
+import DesktopSidebar from './components/DesktopSidebar';
+import DesktopPlayerBar from './components/DesktopPlayerBar';
 import Toast from './components/Toast';
 
 function MainApp() {
@@ -99,18 +101,29 @@ function MainApp() {
         </div>
       )}
 
-      {/* Content Area - Full touch scroll support with safe bottom padding */}
-      <main className="flex-1 w-full max-w-md mx-auto overflow-y-auto pb-44 px-0">
-        {activeTab === 'home' && <HomeScreen onSearchSelect={() => setActiveTab('search')} />}
-        {activeTab === 'search' && <SearchScreen />}
-        {activeTab === 'library' && <LibraryScreen />}
-      </main>
+      {/* Main Responsive Layout (Sidebar on Desktop + Scrollable Main Content) */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Desktop Sidebar (Visible on md and larger) */}
+        <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {/* Floating Mini Player */}
+        {/* Content Area - Full touch scroll support with safe bottom padding */}
+        <main className="flex-1 w-full overflow-y-auto pb-44 md:pb-28 px-4 md:px-8 lg:px-12">
+          <div className="max-w-md md:max-w-7xl mx-auto">
+            {activeTab === 'home' && <HomeScreen onSearchSelect={() => setActiveTab('search')} />}
+            {activeTab === 'search' && <SearchScreen />}
+            {activeTab === 'library' && <LibraryScreen />}
+          </div>
+        </main>
+      </div>
+
+      {/* Floating Mini Player (Mobile Only) */}
       <MiniPlayer />
 
-      {/* Fixed Bottom Navigation */}
+      {/* Fixed Bottom Navigation (Mobile Only) */}
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+
+      {/* Desktop Bottom Player Bar (Desktop Only) */}
+      <DesktopPlayerBar />
 
       {/* Fullscreen Now Playing Overlay */}
       <NowPlaying />

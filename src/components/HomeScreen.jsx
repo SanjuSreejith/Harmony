@@ -366,7 +366,7 @@ export default function HomeScreen() {
   ]);
 
   return (
-    <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-6">
+    <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-6 md:space-y-8">
       {/* App Header & Greeting */}
       <div className="flex items-center justify-between pt-2">
         <div>
@@ -479,9 +479,9 @@ export default function HomeScreen() {
                     <div
                       key={`offline-${track.id}-${idx}`}
                       onClick={() => playTrack(track, downloadedTracks, idx)}
-                      className="flex-shrink-0 w-28 group cursor-pointer active:scale-95 transition-transform"
+                      className="flex-shrink-0 w-28 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
                     >
-                      <div className="relative w-28 h-28 rounded-xl overflow-hidden bg-slate-800 shadow-md">
+                      <div className="relative w-28 h-28 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                         <img
                           src={track.thumbnail}
                           alt={track.title}
@@ -537,14 +537,14 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.lastPlayedMix.tracks.map((track, idx) => (
               <div
                 key={`last-played-${track.id}-${idx}`}
                 onClick={() => playTrack(track, recommendations.lastPlayedMix.tracks, idx)}
-                className="flex-shrink-0 w-32 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-32 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-32 h-32 rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
+                <div className="relative w-32 h-32 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -581,14 +581,14 @@ export default function HomeScreen() {
             </h2>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.smartAIMix.map((track, idx) => (
               <div
                 key={`rl-mix-${track.id}-${idx}`}
                 onClick={() => playTrack(track, recommendations.smartAIMix, idx)}
-                className="flex-shrink-0 w-32 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-32 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-32 h-32 rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
+                <div className="relative w-32 h-32 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -625,14 +625,14 @@ export default function HomeScreen() {
             </h2>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {history.slice(0, 15).map((track) => (
               <div
                 key={`recent-${track.id}`}
                 onClick={() => playTrack(track)}
-                className="flex-shrink-0 w-28 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-28 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-800 shadow-md">
+                <div className="relative w-28 h-28 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -673,14 +673,14 @@ export default function HomeScreen() {
             </p>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {affinity.frequentTracks.map((track, idx) => (
               <div
                 key={`freq-${track.id}-${idx}`}
                 onClick={() => playTrack(track, affinity.frequentTracks, idx)}
-                className="flex-shrink-0 w-28 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-28 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-800 shadow-md">
+                <div className="relative w-28 h-28 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -727,14 +727,14 @@ export default function HomeScreen() {
             </p>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.languageMix.tracks.map((track, idx) => (
               <div
                 key={`lang-${track.id}-${idx}`}
                 onClick={() => playTrack(track, recommendations.languageMix.tracks, idx)}
-                className="flex-shrink-0 w-32 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-32 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-32 h-32 rounded-2xl overflow-hidden bg-slate-800 shadow-md">
+                <div className="relative w-32 h-32 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -778,14 +778,14 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.secondaryMix.tracks.map((track, idx) => (
               <div
                 key={`sec-lang-${track.id}-${idx}`}
                 onClick={() => playTrack(track, recommendations.secondaryMix.tracks, idx)}
-                className="flex-shrink-0 w-32 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-32 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-32 h-32 rounded-2xl overflow-hidden bg-slate-800 shadow-md">
+                <div className="relative w-32 h-32 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -827,14 +827,14 @@ export default function HomeScreen() {
             </p>
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.artistMix.tracks.map((track, idx) => (
               <div
                 key={`art-${track.id}-${idx}`}
                 onClick={() => playTrack(track, recommendations.artistMix.tracks, idx)}
-                className="flex-shrink-0 w-28 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-28 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-800 shadow-md">
+                <div className="relative w-28 h-28 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -878,14 +878,14 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.genreMix.tracks.map((track, idx) => (
               <div
                 key={`genre-${track.id}-${idx}`}
                 onClick={() => playTrack(track, recommendations.genreMix.tracks, idx)}
-                className="flex-shrink-0 w-28 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-28 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-800 shadow-md">
+                <div className="relative w-28 h-28 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -929,14 +929,14 @@ export default function HomeScreen() {
             )}
           </div>
 
-          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.discoverMix.tracks.map((track, idx) => (
               <div
                 key={`discover-${track.id}-${idx}`}
                 onClick={() => playTrack(track, recommendations.discoverMix.tracks, idx)}
-                className="flex-shrink-0 w-28 group cursor-pointer active:scale-95 transition-transform"
+                className="flex-shrink-0 w-28 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
               >
-                <div className="relative w-28 h-28 rounded-2xl overflow-hidden bg-slate-800 shadow-md">
+                <div className="relative w-28 h-28 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-md">
                   <img
                     src={track.thumbnail}
                     alt={track.title}
@@ -983,7 +983,7 @@ export default function HomeScreen() {
             <p className="text-xs font-medium">Loading music from YouTube...</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-3 md:space-y-0">
             {trendingTracks.map((track, idx) => {
               const isCurrent = currentTrack?.id === track.id;
               const downloaded = isDownloaded(track.id);

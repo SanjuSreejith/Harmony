@@ -12,7 +12,7 @@ export default function BottomNav({ activeTab, setActiveTab }) {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 glass-nav safe-bottom select-none">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 glass-nav safe-bottom select-none md:hidden">
       <div className="max-w-md mx-auto flex items-center justify-around px-4 py-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;

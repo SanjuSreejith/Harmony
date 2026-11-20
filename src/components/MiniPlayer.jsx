@@ -23,7 +23,7 @@ export default function MiniPlayer() {
   const isFav = isFavorite(currentTrack.id);
 
   return (
-    <div className="fixed bottom-[68px] left-0 right-0 z-30 px-3 py-1 pointer-events-auto">
+    <div className="fixed bottom-[68px] left-0 right-0 z-30 px-3 py-1 pointer-events-auto md:hidden">
       <div
         onClick={() => setIsNowPlayingExpanded(true)}
         className="max-w-md mx-auto relative overflow-hidden rounded-2xl bg-slate-900/90 backdrop-blur-xl shadow-2xl border border-white/15 cursor-pointer active:scale-[0.99] transition-transform"

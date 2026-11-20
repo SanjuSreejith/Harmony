@@ -81,7 +81,7 @@ export default function SearchScreen() {
   }
 
   return (
-    <div className="pb-36 pt-4 px-4 max-w-md mx-auto space-y-5">
+    <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-5 md:space-y-6">
       {/* Header */}
       <div className="pt-2">
         <h1 className="text-2xl font-black text-white tracking-tight">Search</h1>
@@ -145,7 +145,7 @@ export default function SearchScreen() {
             Top Results ({results.length})
           </p>
 
-          <div className="space-y-2">
+          <div className="space-y-2 md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-3 md:space-y-0">
             {results.map((track, idx) => {
               const isCurrent = currentTrack?.id === track.id;
               const isFav = isFavorite(track.id);
