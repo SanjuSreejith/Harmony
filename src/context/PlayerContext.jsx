@@ -58,6 +58,12 @@ export function PlayerProvider({ children }) {
   const isUserPausedRef = useRef(false);
   const [hasRealAudioStarted, setHasRealAudioStarted] = useState(false);
 
+  // When useDirectPlayer is restored from localStorage on page reload,
+  // the heartbeat needs hasRealAudioStarted=true to run. The direct player
+  // will set it via the harmoniq:direct-player-playing event once YouTube confirms playback.
+  // But we also need to bootstrap it here so the heartbeat at least starts ticking
+  // and can receive the initial time update from BackgroundDirectPlayer.
+
   // Playback state with persistent session resume
   const [currentTrack, setCurrentTrack] = useState(() => {
     try {
@@ -571,7 +577,13 @@ export function PlayerProvider({ children }) {
   // Mobile & Background Tab Audio Wake-Lock Keepalive:
   // When useDirectPlayer is active, feed the HTML5 <audio> element with live Web Audio MediaStream
   // or looping audio so browser media controls and background audio priority never stall!
+  // Also bootstrap the keepalive on mount when useDirectPlayer was restored from localStorage.
   useEffect(() => {
+    if (useDirectPlayer && isPlaying) {
+      // Ensure the audible keepalive oscillator is running first
+      startAudibleKeepAlive();
+    }
+
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -639,7 +651,10 @@ export function PlayerProvider({ children }) {
   // Master live playback heartbeat for accurate timeline sync across ALL playback engines
   useEffect(() => {
     // Strictly don't tick or advance the scrubber while song is still loading, buffering, or paused
-    if (!isPlaying || isLoading || !hasRealAudioStarted) return;
+    // Exception: when useDirectPlayer is active, we need the heartbeat running even before hasRealAudioStarted
+    // because BackgroundDirectPlayer pushes time updates via setCurrentTime directly
+    if (!isPlaying || isLoading) return;
+    if (!hasRealAudioStarted && !useDirectPlayer) return;
 
     let lastTickTime = Date.now();
     let tickCount = 0;

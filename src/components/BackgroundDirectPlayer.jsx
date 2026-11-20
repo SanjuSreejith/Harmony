@@ -194,6 +194,11 @@ export default function BackgroundDirectPlayer() {
               setIsLoading(true);
               return;
             }
+            // Ensure audio is unmuted when real song starts playing
+            if (!isMuted) {
+              sendCommand('unMute');
+              sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+            }
             setIsPlaying(true);
             setIsLoading(false);
             if (typeof window !== 'undefined') {
@@ -253,7 +258,7 @@ export default function BackgroundDirectPlayer() {
             sendCommand('setPlaybackRate', [1]);
           }
 
-          if (!isMuted && !isAdActiveRef.current && ytPlayerStateRef.current === 1 && (reportedDur >= Math.min(trackExpectedDur - 10, 50) || reportedDur === 0)) {
+          if (!isMuted && !isAdActiveRef.current && ytPlayerStateRef.current === 1) {
             sendCommand('unMute');
             sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
           }
@@ -281,10 +286,14 @@ export default function BackgroundDirectPlayer() {
           }
         } else if (data.event === 'initialDelivery') {
           playerReadyRef.current = true;
-          // Keep initially muted until real song playback is confirmed to guarantee 0 ad sound leakage
           const target = startSecRef.current || 0;
           if (target > 0) {
             sendCommand('seekTo', [target, true]);
+          }
+          // Unmute and set volume immediately on player ready (no ad will be detected yet on fresh load)
+          if (!isMuted && !isAdActiveRef.current) {
+            sendCommand('unMute');
+            sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
           }
           if (isPlaying && shouldBeActive) sendCommand('playVideo');
         }
@@ -302,6 +311,10 @@ export default function BackgroundDirectPlayer() {
         if (isAdActiveRef.current) {
           sendCommand('mute');
           sendCommand('setVolume', [0]);
+        } else if (!isMuted) {
+          // Re-unmute when returning to tab in case Chrome auto-muted the iframe
+          sendCommand('unMute');
+          sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
         }
         sendCommand('playVideo');
       }
@@ -316,28 +329,27 @@ export default function BackgroundDirectPlayer() {
       window.removeEventListener('focus', handleVisibilityChange);
       window.removeEventListener('pagehide', handleVisibilityChange);
     };
-  }, [shouldBeActive, isPlaying, isUserPausedRef]);
+  }, [shouldBeActive, isPlaying, isUserPausedRef, isMuted, volume]);
 
   if (!shouldBeActive || !currentTrack) return null;
 
   const startSec = startSecRef.current || 0;
   const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
   const widgetReferrer = typeof window !== 'undefined' && window.location.href ? `&widget_referrer=${encodeURIComponent(window.location.href)}` : '';
-  // Enhanced privacy-enhanced embed domain with pre-muted autoplay for instant ad suppression
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
+  // Privacy-enhanced embed with unmuted autoplay for immediate audio playback
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
 
   return (
     <div
       style={{
         position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100%',
-        height: '100%',
-        opacity: 1,
+        bottom: 0,
+        right: 0,
+        width: '1px',
+        height: '1px',
+        opacity: 0.01,
         pointerEvents: 'none',
-        zIndex: -9999,
-        visibility: 'visible',
+        zIndex: -1,
         overflow: 'hidden'
       }}
       aria-hidden="true"
@@ -347,7 +359,7 @@ export default function BackgroundDirectPlayer() {
         key={currentTrack.id}
         src={embedUrl}
         title="Harmoniq Audio Engine"
-        allow="autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
+        allow="autoplay; encrypted-media; picture-in-picture; clipboard-write"
         importance="high"
         style={{ width: '100%', height: '100%', border: 'none' }}
       />
