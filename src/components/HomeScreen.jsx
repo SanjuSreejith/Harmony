@@ -19,10 +19,12 @@ import {
   History,
   Plus,
   WifiOff,
-  RotateCw
+  RotateCw,
+  Cloud,
+  Laptop
 } from 'lucide-react';
 import { usePlayer } from '../context/PlayerContext';
-import { getTrendingTracks, getRecommendations } from '../services/api';
+import { getTrendingTracks, getRecommendations, getServerSelection, setServerSelection, SERVER_MODES } from '../services/api';
 import { ALL_INDIAN_LANGUAGES } from '../constants/languages';
 import AddToPlaylistModal from './AddToPlaylistModal';
 import { reRankRecommendations } from '../services/reinforcementLearning';
@@ -59,8 +61,33 @@ export default function HomeScreen() {
     favorites,
     downloadedTracks,
     isInstalled,
-    triggerInstall
+    triggerInstall,
+    showToast
   } = usePlayer();
+
+  const [serverMode, setServerMode] = useState(() => getServerSelection().mode || SERVER_MODES.AUTO);
+
+  useEffect(() => {
+    function onServerChanged(e) {
+      if (e.detail) setServerMode(e.detail);
+    }
+    window.addEventListener('harmoniq:server-mode-changed', onServerChanged);
+    return () => window.removeEventListener('harmoniq:server-mode-changed', onServerChanged);
+  }, []);
+
+  function handleQuickToggleServer() {
+    const nextMode = serverMode === SERVER_MODES.CLOUD ? SERVER_MODES.USB : SERVER_MODES.CLOUD;
+    setServerSelection(nextMode);
+    setServerMode(nextMode);
+    window.dispatchEvent(new CustomEvent('harmoniq:server-mode-changed', { detail: nextMode }));
+    if (showToast) {
+      if (nextMode === SERVER_MODES.CLOUD) {
+        showToast('Switched to 24/7 Cloud Server (Render) ☁️', 'info');
+      } else {
+        showToast('Switched to Local PC Server (LAN/USB) 💻', 'info');
+      }
+    }
+  }
 
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
@@ -327,7 +354,8 @@ export default function HomeScreen() {
       if (autoApplyTimerRef.current) clearTimeout(autoApplyTimerRef.current);
     };
   }, [
-    preferences,
+    preferences?.languages?.join(','),
+    preferences?.genres?.join(','),
     activeMood,
     selectedLanguage
   ]);
@@ -368,73 +396,84 @@ export default function HomeScreen() {
   return (
     <div className="pb-36 md:pb-28 pt-4 px-0 max-w-md md:max-w-none mx-auto space-y-6 md:space-y-8">
       {/* App Header & Greeting */}
-      <div className="flex items-center justify-between pt-2">
-        <div>
+      <div className="flex items-center justify-between pt-2 gap-2">
+        <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+            <span className="text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
               Harmoniq
             </span>
           </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight truncate">
             {greeting}
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Subtle Refresh Button */}
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
+          {/* Quick Server Switcher Badge (1-Tap Cloud / PC Switch) */}
+          <button
+            onClick={handleQuickToggleServer}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm active:scale-95 ${
+              serverMode === SERVER_MODES.CLOUD
+                ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/25'
+                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25'
+            }`}
+            title="Click to toggle between 24/7 Cloud Server and Local PC Server"
+          >
+            {serverMode === SERVER_MODES.CLOUD ? (
+              <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+            ) : (
+              <Laptop className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+            <span className="text-[11px] font-bold">
+              {serverMode === SERVER_MODES.CLOUD ? 'Cloud' : (serverMode === SERVER_MODES.AUTO ? 'Auto' : 'PC')}
+            </span>
+          </button>
+
+          {/* 1-Tap Compact Install Button in Header */}
+          {!isInstalled && (
+            <button
+              onClick={triggerInstall}
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold active:scale-95 transition-all shadow-sm"
+              title="Install Web App"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="text-[11px]">Install</span>
+            </button>
+          )}
+
+          {/* Refresh Button (Visible on sm+ screens to preserve mobile header space) */}
           <button
             onClick={handleManualRefresh}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/5 active:scale-95 transition-all"
+            className="hidden sm:flex p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
             title="Refresh Recommendations"
           >
-            <RotateCw className={`w-4 h-4 text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <RotateCw className={`w-3.5 h-3.5 text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
 
           {/* Preferences Button */}
           <button
             onClick={() => setShowPreferencesModal(true)}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/5 active:scale-95 transition-all"
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
             title="Music Preferences & Languages"
           >
-            <Sliders className="w-4 h-4 text-emerald-400" />
+            <Sliders className="w-3.5 h-3.5 text-emerald-400" />
           </button>
 
           {/* Settings Button */}
           <button
             onClick={() => setShowSettingsModal(true)}
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white border border-white/5 active:scale-95 transition-all"
+            className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/5 active:scale-90 transition-all"
             title="App Settings"
           >
-            <Settings className="w-4 h-4 text-slate-300" />
+            <Settings className="w-3.5 h-3.5 text-slate-300" />
           </button>
         </div>
       </div>
 
-      {/* PWA 1-Tap Install Card for Mobile & Desktop */}
-      {!isInstalled && (
-        <section className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-indigo-500/15 border border-emerald-500/25 flex items-center justify-between gap-3 shadow-sm">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
-              <Download className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">Install Harmoniq App</p>
-              <p className="text-[10px] text-slate-400 truncate">1-tap standalone web app with lockscreen controls</p>
-            </div>
-          </div>
-          <button
-            onClick={triggerInstall}
-            className="px-3.5 py-1.5 rounded-xl bg-emerald-400 text-black text-xs font-bold active:scale-95 transition-transform flex-shrink-0 shadow-md hover:bg-emerald-300"
-          >
-            Install
-          </button>
-        </section>
-      )}
-
       {/* 1. Mood & Vibe Filter Pills */}
       <section>
-        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 py-1">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 py-1">
           {MOOD_FILTERS.map((m) => {
             const isSelected = activeMood === m.id;
             return (
@@ -601,14 +640,49 @@ export default function HomeScreen() {
                     </div>
                   </div>
                 </div>
-                <p className="text-xs font-semibold text-white truncate mt-1.5">
-                  {track.title}
-                </p>
-                <p className="text-[11px] text-slate-400 truncate">
-                  {track.artist}
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Tuned to your listening habits, skips, and favorite genres in real time
                 </p>
               </div>
-            ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
+            {recommendations.smartAIMix.map((track, idx) => {
+              // High match indicator for top recommendations
+              const matchPercent = Math.max(88, 99 - idx * 2);
+              return (
+                <div
+                  key={`rl-mix-${track.id}-${idx}`}
+                  onClick={() => playTrack(track, recommendations.smartAIMix, idx)}
+                  className="flex-shrink-0 w-32 group cursor-pointer active:scale-95 transition-transform"
+                >
+                  <div className="relative w-32 h-32 rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
+                    <img
+                      src={track.thumbnail}
+                      alt={track.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
+                    <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-bold text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shadow-sm">
+                      <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                      {matchPercent}%
+                    </div>
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <div className="w-10 h-10 rounded-full bg-emerald-400 text-black flex items-center justify-center shadow-lg">
+                        <Play className="w-5 h-5 fill-current ml-0.5" />
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs font-semibold text-white truncate mt-1.5">
+                    {track.title}
+                  </p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {track.artist}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -999,8 +1073,16 @@ export default function HomeScreen() {
                       : 'glass-card hover:bg-white/10'
                   }`}
                 >
-                  <span className="text-xs font-bold text-slate-500 w-4 text-center">
-                    {idx + 1}
+                  <span className={`text-xs font-bold w-6 text-center ${
+                    idx === 0
+                      ? 'text-amber-400 text-sm'
+                      : idx === 1
+                      ? 'text-slate-300 text-sm'
+                      : idx === 2
+                      ? 'text-amber-600 text-sm'
+                      : 'text-slate-500'
+                  }`}>
+                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
                   </span>
 
                   <div className="relative w-12 h-12 flex-shrink-0 rounded-xl overflow-hidden bg-slate-800">

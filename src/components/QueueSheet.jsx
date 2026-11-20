@@ -31,9 +31,12 @@ export default function QueueSheet() {
   if (!showQueueSheet) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col justify-end animate-in fade-in duration-200">
+    <div
+      onClick={() => setShowQueueSheet(false)}
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col justify-end md:justify-start md:items-end animate-in fade-in duration-200"
+    >
       <div
-        className="w-full max-w-md mx-auto h-[85vh] bg-[#0c101d] rounded-t-3xl border-t border-white/10 flex flex-col safe-bottom overflow-hidden shadow-2xl"
+        className="w-full max-w-md mx-auto md:mx-0 md:w-[420px] md:h-full md:rounded-l-3xl md:rounded-r-none h-[85vh] bg-[#0c101d] rounded-t-3xl border-t md:border-t-0 md:border-l border-white/10 flex flex-col safe-bottom overflow-hidden shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

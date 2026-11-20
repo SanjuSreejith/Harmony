@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Heart,
   Clock,
@@ -38,6 +38,14 @@ export default function LibraryScreen() {
   const [activeView, setActiveView] = useState('main'); // 'main' | 'favorites' | 'downloads' | 'history' | playlistId
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  useEffect(() => {
+    function handleNav(e) {
+      if (e.detail) setActiveView(e.detail);
+    }
+    window.addEventListener('harmoniq:nav-library', handleNav);
+    return () => window.removeEventListener('harmoniq:nav-library', handleNav);
+  }, []);
 
   function handleCreatePlaylist(e) {
     e.preventDefault();
@@ -89,7 +97,7 @@ export default function LibraryScreen() {
             </p>
           </div>
         ) : (
-          <div className="space-y-2 pt-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 space-y-0 pt-2">
             {downloadedTracks.map((track, idx) => (
               <div
                 key={track.id}
@@ -290,7 +298,7 @@ export default function LibraryScreen() {
             No liked songs yet. Tap the heart on any song to add it here!
           </p>
         ) : (
-          <div className="space-y-2 pt-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 space-y-0 pt-2">
             {favorites.map((track, idx) => (
               <div
                 key={track.id}
@@ -383,7 +391,7 @@ export default function LibraryScreen() {
             This playlist is empty. Add songs to it from Now Playing or Search!
           </p>
         ) : (
-          <div className="space-y-2 pt-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 space-y-0 pt-2">
             {pl.tracks.map((track, idx) => (
               <div
                 key={`${track.id}-${idx}`}
@@ -445,7 +453,7 @@ export default function LibraryScreen() {
       </div>
 
       {/* Hub Cards Grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         {/* Offline Downloads Card */}
         <div
           onClick={() => setActiveView('downloads')}
@@ -520,7 +528,7 @@ export default function LibraryScreen() {
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 space-y-0">
             {playlists.map((pl) => (
               <div
                 key={pl.id}

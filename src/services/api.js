@@ -29,6 +29,11 @@ let cachedServer = null;
 let lastPingTime = 0;
 let isResolving = false;
 
+function isLocalhost() {
+  if (typeof window === 'undefined') return true;
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+}
+
 // Store explicit server mode selection
 export function setServerSelection(mode, customUrl = null) {
   if (typeof localStorage === 'undefined') return;
@@ -166,12 +171,6 @@ export async function testServerConnection(targetUrl = null) {
 
 export async function resolveServer(force = false) {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
-
-  // If in web browser (PC localhost or LAN browser)
-  if (typeof window !== 'undefined' && !isNative) {
-    return '';
-  }
-
   const selection = getServerSelection();
   const now = Date.now();
 
@@ -179,6 +178,14 @@ export async function resolveServer(force = false) {
   if (selection.mode === SERVER_MODES.CLOUD) {
     cachedServer = CLOUD_FALLBACK_SERVER;
     return CLOUD_FALLBACK_SERVER;
+  }
+
+  // 2. If in web browser on localhost / 127.0.0.1 and PC server is active
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
+    // If local dev server is running on port 3000, use it
+    if (selection.mode !== SERVER_MODES.CLOUD) {
+      return '';
+    }
   }
 
   // 2. Explicit USB mode selected by user
@@ -269,14 +276,14 @@ export async function getApiBase() {
 
 export function getServerUrl() {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
-  if (typeof window !== 'undefined' && !isNative) {
-    return '';
-  }
   const selection = getServerSelection();
   if (selection.mode === SERVER_MODES.CLOUD) return CLOUD_FALLBACK_SERVER;
   if (selection.mode === SERVER_MODES.USB) return PC_USB_SERVER;
   if (selection.mode === SERVER_MODES.WIFI) return PC_WIFI_SERVER;
   if (selection.mode === SERVER_MODES.CUSTOM && selection.url) return selection.url;
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
+    return '';
+  }
   return (cachedServer !== null && cachedServer !== undefined) ? cachedServer : CLOUD_FALLBACK_SERVER;
 }
 
@@ -454,15 +461,21 @@ export async function getPlayableAudioStreamUrl(videoId, quality = 'best') {
   if (!videoId) return null;
 
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
+  const selection = getServerSelection();
 
-  // In web browser, stream relative immediately for 0ms delay and no iframe switch
-  if (typeof window !== 'undefined' && !isNative) {
+  // If Cloud mode is selected, direct to Cloud stream
+  if (selection.mode === SERVER_MODES.CLOUD) {
+    return `${CLOUD_FALLBACK_SERVER}/api/stream/${videoId}?quality=${quality}`;
+  }
+
+  // In web browser on localhost when PC server is active, stream relative immediately for 0ms delay
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return `/api/stream/${videoId}?quality=${quality}`;
   }
 
-  // Resolve optimal server (PC if reachable, otherwise Cloud)
-  const srv = await resolveServer();
-  const base = (srv !== null && srv !== undefined && srv !== '') ? srv : CLOUD_FALLBACK_SERVER;
+  // Never make playback wait for the LAN server scan. Resolve the best server in
+  // the background, while starting against the last known server (or cloud).
+  const base = getServerUrl() || CLOUD_FALLBACK_SERVER;
 
   // Return proxy stream URL (Streamed by Node.js with HTTP 206 Partial Content)
   // Guarantees zero 403 Forbidden IP mismatch errors on PC and Cloud!
@@ -471,7 +484,7 @@ export async function getPlayableAudioStreamUrl(videoId, quality = 'best') {
 
 export function getAudioStreamUrl(videoId, quality = 'best') {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
-  if (typeof window !== 'undefined' && !isNative) {
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return `/api/stream/${videoId}?quality=${quality}`;
   }
   const base = getServerUrl();
@@ -480,7 +493,7 @@ export function getAudioStreamUrl(videoId, quality = 'best') {
 
 export function getVideoStreamUrl(videoId) {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
-  if (typeof window !== 'undefined' && !isNative) {
+  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
     return `/api/stream/video/${videoId}`;
   }
   const base = getServerUrl();
