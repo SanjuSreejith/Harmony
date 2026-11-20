@@ -615,39 +615,17 @@ export default function HomeScreen() {
             <div className="w-5 h-5 rounded-md bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
               <Sparkles className="w-3 h-3" />
             </div>
-            <h2 className="text-sm font-bold text-white tracking-tight">
-              Smart AI Mix
-            </h2>
-          </div>
-
-          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0">
-            {recommendations.smartAIMix.map((track, idx) => (
-              <div
-                key={`rl-mix-${track.id}-${idx}`}
-                onClick={() => playTrack(track, recommendations.smartAIMix, idx)}
-                className="flex-shrink-0 w-32 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
-              >
-                <div className="relative w-32 h-32 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
-                  <img
-                    src={track.thumbnail}
-                    alt={track.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                    <div className="w-10 h-10 rounded-full bg-emerald-400 text-black flex items-center justify-center shadow-lg">
-                      <Play className="w-5 h-5 fill-current ml-0.5" />
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Tuned to your listening habits, skips, and favorite genres in real time
-                </p>
-              </div>
+            <div>
+              <h2 className="text-sm font-bold text-white tracking-tight">
+                Smart AI Mix
+              </h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Tuned to your listening habits, skips, and favorite genres in real time
+              </p>
             </div>
           </div>
 
-          <div className="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
+          <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 overflow-x-auto md:overflow-visible no-scrollbar pb-2 md:pb-3 -mx-4 px-4 md:mx-0 md:px-0">
             {recommendations.smartAIMix.map((track, idx) => {
               // High match indicator for top recommendations
               const matchPercent = Math.max(88, 99 - idx * 2);
@@ -655,9 +633,9 @@ export default function HomeScreen() {
                 <div
                   key={`rl-mix-${track.id}-${idx}`}
                   onClick={() => playTrack(track, recommendations.smartAIMix, idx)}
-                  className="flex-shrink-0 w-32 group cursor-pointer active:scale-95 transition-transform"
+                  className="flex-shrink-0 w-32 md:w-full group cursor-pointer active:scale-95 md:hover:scale-[1.03] transition-all"
                 >
-                  <div className="relative w-32 h-32 rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
+                  <div className="relative w-32 h-32 md:w-full md:aspect-square rounded-2xl overflow-hidden bg-slate-800 shadow-lg border border-white/5">
                     <img
                       src={track.thumbnail}
                       alt={track.title}

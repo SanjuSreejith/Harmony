@@ -14,8 +14,6 @@ import SleepTimerModal from './components/SleepTimerModal';
 import PreferencesModal from './components/PreferencesModal';
 import SettingsModal from './components/SettingsModal';
 import BackgroundDirectPlayer from './components/BackgroundDirectPlayer';
-import DesktopSidebar from './components/DesktopSidebar';
-import DesktopPlayerBar from './components/DesktopPlayerBar';
 import Toast from './components/Toast';
 
 function MainApp() {
@@ -83,32 +81,27 @@ function MainApp() {
   }, [currentTrack, currentTime, duration, isPlaying, volume]);
 
   return (
-    <div className="min-h-screen bg-[#08080c] text-white flex flex-col md:flex-row relative selection:bg-emerald-500 selection:text-black">
+    <div className="h-screen bg-[#08080c] text-white flex flex-col relative selection:bg-emerald-500 selection:text-black overflow-hidden">
       {/* Toast Notification Pill */}
       <Toast />
 
-      {/* Desktop Persistent Left Sidebar */}
-      <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
-
-      {/* Main Content Wrapper (offset by sidebar on desktop) */}
-      <div className="flex-1 flex flex-col min-w-0 md:ml-64">
-        {/* Persistent Offline Mode Banner */}
-        {!isOnline && (
-          <div className="sticky top-0 z-50 px-4 py-2 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 border-b border-amber-500/30 backdrop-blur-md flex items-center justify-between text-xs text-amber-300">
-            <div className="flex items-center gap-2">
-              <WifiOff className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-              <span className="font-semibold">Offline Mode • Downloaded music ready</span>
-            </div>
-            <button
-              onClick={() => setActiveTab('library')}
-              className="px-2.5 py-1 rounded-lg bg-amber-400 text-black text-[11px] font-bold active:scale-95 transition-transform"
-            >
-              Downloads
-            </button>
+      {/* Persistent Offline Mode Banner */}
+      {!isOnline && (
+        <div className="sticky top-0 z-50 px-4 py-2 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 border-b border-amber-500/30 backdrop-blur-md flex items-center justify-between text-xs text-amber-300">
+          <div className="flex items-center gap-2">
+            <WifiOff className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span className="font-semibold">Offline Mode • Downloaded music ready</span>
           </div>
-        )}
+          <button
+            onClick={() => setActiveTab('library')}
+            className="px-2.5 py-1 rounded-lg bg-amber-400 text-black text-[11px] font-bold active:scale-95 transition-transform"
+          >
+            Downloads
+          </button>
+        </div>
+      )}
 
-      {/* Main Responsive Layout (Sidebar on Desktop + Scrollable Main Content) */}
+      {/* Main Responsive Layout (Desktop Sidebar on Left + Scrollable Content) */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Desktop Sidebar (Visible on md and larger) */}
         <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} />
