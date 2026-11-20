@@ -29,6 +29,7 @@ export default function BackgroundDirectPlayer() {
   const playerReadyRef = useRef(false);
   const ytPlayerStateRef = useRef(-1); // -1 = unstarted, 1 = playing, 2 = paused, 3 = buffering, 0 = ended
   const isAdActiveRef = useRef(false);
+  const confirmedVideoIdRef = useRef(null);
   const timerRef = useRef(null);
   const startSecRef = useRef(0);
   const currentTimeRef = useRef(0);
@@ -44,6 +45,7 @@ export default function BackgroundDirectPlayer() {
     startSecRef.current = 0;
     ytPlayerStateRef.current = -1;
     isAdActiveRef.current = false;
+    confirmedVideoIdRef.current = null;
   }, [currentTrack?.id]);
 
   function sendCommand(func, args = []) {
@@ -69,6 +71,17 @@ export default function BackgroundDirectPlayer() {
       timerRef.current = setInterval(() => {
         sendCommand('getCurrentTime');
         sendCommand('getDuration');
+
+        // Continuous Ad Neutralizer:
+        // While an ad is active, force mute, max speed, seek to 9999, and skip
+        if (isAdActiveRef.current) {
+          sendCommand('mute');
+          sendCommand('setVolume', [0]);
+          sendCommand('setPlaybackRate', [2]);
+          sendCommand('seekTo', [9999, true]);
+          sendCommand('skipAd');
+        }
+
         // When tab is hidden in background, actively ensure playback state is retained
         if (document.hidden && (!isUserPausedRef || !isUserPausedRef.current)) {
           if (isAdActiveRef.current) {
@@ -77,7 +90,7 @@ export default function BackgroundDirectPlayer() {
           }
           sendCommand('playVideo');
         }
-      }, 250);
+      }, 200);
     }
 
     return () => {
@@ -141,16 +154,28 @@ export default function BackgroundDirectPlayer() {
         const reportedDur = typeof data.info?.duration === 'number' ? data.info.duration : 0;
         const reportedVideoId = data.info?.videoData?.video_id;
 
+        // If YouTube explicitly reports the video ID, check if it matches our track
+        if (reportedVideoId) {
+          if (reportedVideoId === currentTrack?.id) {
+            confirmedVideoIdRef.current = reportedVideoId;
+          } else {
+            // Video ID mismatch: an advertisement video is playing!
+            isAdActiveRef.current = true;
+          }
+        }
+
         // Commercial ad detection criteria:
-        // 1. YouTube explicitly indicates an ad via adState === 1, isAdPlaying === true, or adVideoId
-        // 2. data.event is 'onAdStart'
+        // 1. YouTube explicitly indicates an ad via adState === 1, isAdPlaying === true, adVideoId, or adTime
+        // 2. data.event is 'onAdStart' or 'onAdStateChange'
         // 3. YouTube is playing a video whose video_id doesn't match our track ID
         // 4. YouTube reports a video duration that is very short (< 45s) while our track is expected to be > 55s
         const isAdStarted = Boolean(
           data.event === 'onAdStart' ||
+          data.event === 'onAdStateChange' ||
           data.info?.adState === 1 ||
           data.info?.isAdPlaying === true ||
           Boolean(data.info?.adVideoId) ||
+          Boolean(data.info?.adTime) ||
           (reportedVideoId && reportedVideoId !== currentTrack?.id) ||
           (reportedDur > 0 && reportedDur < 45 && trackExpectedDur > 55)
         );
@@ -165,18 +190,19 @@ export default function BackgroundDirectPlayer() {
 
         if (isAdStarted) {
           isAdActiveRef.current = true;
-        } else if (isAdEnded) {
+        } else if (isAdEnded && (confirmedVideoIdRef.current === currentTrack?.id || !reportedVideoId)) {
           isAdActiveRef.current = false;
         }
 
         // Active Ad Neutralizer:
         // When an ad is playing, strictly eliminate sound, speed up to 2x rate, seek to the end,
-        // and hold the UI locked in loading/buffering state so the scrubber does not advance.
+        // send skip commands, and hold the UI locked in loading/buffering state so the scrubber does not advance.
         if (isAdActiveRef.current) {
           sendCommand('mute');
           sendCommand('setVolume', [0]);
           sendCommand('setPlaybackRate', [2]);
           sendCommand('seekTo', [reportedDur > 0 ? reportedDur : 9999, true]);
+          sendCommand('skipAd');
           setIsLoading(true);
           return; // Strictly abort any processing of time updates or unmuting!
         }
@@ -191,13 +217,16 @@ export default function BackgroundDirectPlayer() {
               sendCommand('setVolume', [0]);
               sendCommand('setPlaybackRate', [2]);
               sendCommand('seekTo', [9999, true]);
+              sendCommand('skipAd');
               setIsLoading(true);
               return;
             }
-            // Ensure audio is unmuted when real song starts playing
-            if (!isMuted) {
+            // Only unmute if verified not an ad
+            const isConfirmedTrack = confirmedVideoIdRef.current === currentTrack?.id || confirmedVideoIdRef.current === null;
+            if (!isMuted && isConfirmedTrack && !isAdActiveRef.current) {
               sendCommand('unMute');
               sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+              sendCommand('setPlaybackRate', [1]);
             }
             setIsPlaying(true);
             setIsLoading(false);
@@ -254,22 +283,30 @@ export default function BackgroundDirectPlayer() {
           }
 
           // If an ad was active and has now ended, restore normal 1x playback speed
-          if (data.info.playbackRate && data.info.playbackRate !== 1) {
+          if (data.info.playbackRate && data.info.playbackRate !== 1 && !isAdActiveRef.current) {
             sendCommand('setPlaybackRate', [1]);
           }
 
-          if (!isMuted && !isAdActiveRef.current && ytPlayerStateRef.current === 1) {
+          // Real song confirmed playback check:
+          const isRealSongPlaying = ytPlayerStateRef.current === 1 && !isAdActiveRef.current && (
+            confirmedVideoIdRef.current === currentTrack?.id ||
+            (typeof data.info.currentTime === 'number' && data.info.currentTime > 0.5) ||
+            reportedDur >= Math.min(trackExpectedDur - 10, 45)
+          );
+
+          if (!isMuted && isRealSongPlaying) {
             sendCommand('unMute');
             sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+            sendCommand('setPlaybackRate', [1]);
           }
 
           if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime) && data.info.currentTime >= 0) {
             // ONLY accept time updates and un-buffer when YouTube confirms it is actually playing the real song (state 1)!
             // If buffering (3), paused (2), unstarted (-1), or ad active, DO NOT advance or un-buffer the slider!
             const isActuallyPlaying = ytPlayerStateRef.current === 1;
-            const isDurValid = reportedDur >= Math.min(trackExpectedDur - 10, 50) || reportedDur === 0;
+            const isDurValid = reportedDur >= Math.min(trackExpectedDur - 10, 45) || reportedDur === 0;
 
-            if (isActuallyPlaying && isDurValid && !isAdActiveRef.current) {
+            if (isActuallyPlaying && isDurValid && !isAdActiveRef.current && (confirmedVideoIdRef.current === currentTrack?.id || !reportedVideoId)) {
               currentTimeRef.current = data.info.currentTime;
               setCurrentTime(data.info.currentTime);
               setIsLoading(false);
@@ -290,11 +327,9 @@ export default function BackgroundDirectPlayer() {
           if (target > 0) {
             sendCommand('seekTo', [target, true]);
           }
-          // Unmute and set volume immediately on player ready (no ad will be detected yet on fresh load)
-          if (!isMuted && !isAdActiveRef.current) {
-            sendCommand('unMute');
-            sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
-          }
+          // Start MUTED so pre-roll ads produce ZERO sound!
+          sendCommand('mute');
+          sendCommand('setVolume', [0]);
           if (isPlaying && shouldBeActive) sendCommand('playVideo');
         }
       } catch (e) {}
@@ -336,8 +371,8 @@ export default function BackgroundDirectPlayer() {
   const startSec = startSecRef.current || 0;
   const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
   const widgetReferrer = typeof window !== 'undefined' && window.location.href ? `&widget_referrer=${encodeURIComponent(window.location.href)}` : '';
-  // Privacy-enhanced embed with unmuted autoplay for immediate audio playback
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
+  // Privacy-enhanced embed domain with pre-muted autoplay for instant ad suppression
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
 
   return (
     <div

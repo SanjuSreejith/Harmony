@@ -89,9 +89,11 @@ export default function SyncedVideoPlayer({
 
         const isAdStarted = Boolean(
           data.event === 'onAdStart' ||
+          data.event === 'onAdStateChange' ||
           data.info?.adState === 1 ||
           data.info?.isAdPlaying === true ||
           Boolean(data.info?.adVideoId) ||
+          Boolean(data.info?.adTime) ||
           (reportedVideoId && reportedVideoId !== track?.id) ||
           (reportedDur > 0 && reportedDur < 45 && trackExpectedDur > 55)
         );
@@ -108,6 +110,7 @@ export default function SyncedVideoPlayer({
           sendCommand('mute');
           sendCommand('setPlaybackRate', [2]);
           sendCommand('seekTo', [reportedDur > 0 ? reportedDur : 9999, true]);
+          sendCommand('skipAd');
           return;
         } else if (isAdEnded) {
           isAdActiveRef.current = false;
