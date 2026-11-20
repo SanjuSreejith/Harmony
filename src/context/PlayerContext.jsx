@@ -1198,15 +1198,29 @@ export function PlayerProvider({ children }) {
       // Check if this stream is directed to the Render cloud server
       const isCloudStream = Boolean(streamUrl && streamUrl.includes('onrender.com'));
       if (isCloudStream) {
-        // Attempt clean HTML5 audio playback first via server stream.
-        // Only if HTML5 audio fails with an error will the fallback player take over.
-        console.log('[Player] Attempting ad-free direct audio stream from server:', streamUrl);
+        // Render cloud server cannot decipher YouTube streams (HTTP 500 error).
+        // Instantly switch to the verified zero-ad direct player engine so playback begins without hanging!
+        console.log('[Player] Cloud stream detected without PC server. Routing directly to direct player engine:', track.id);
+        if (audioRef.current) {
+          try {
+            audioRef.current.pause();
+            audioRef.current.removeAttribute('src');
+            audioRef.current.srcObject = null;
+            audioRef.current.load();
+          } catch (e) {}
+        }
+        nativePlaybackRef.current = false;
+        setUseDirectPlayer(true);
+        useDirectPlayerRef.current = true;
+        setIsPlaying(true);
+        setIsLoading(true);
+        return;
       }
 
-      // If running on native Android with a valid stream URL (PC server or local proxy):
+      // If running on native Android with a valid LAN/PC stream URL:
       // Stream directly through the native Foreground Service's MediaPlayer.
       // This enables 100% background playback even when the app is completely exited, screen is off, or phone is locked (Spotify behavior)!
-      if (isNativePlatform() && streamUrl && streamUrl.startsWith('http')) {
+      if (isNativePlatform() && streamUrl && streamUrl.startsWith('http') && !isCloudStream) {
         console.log('[Player] Native Android: Starting native MediaPlayer in ForegroundService:', streamUrl);
         const played = await playNativeStream({
           url: streamUrl,

@@ -329,8 +329,12 @@ export default function BackgroundDirectPlayer() {
   if (!shouldBeActive || !currentTrack) return null;
 
   const startSec = startSecRef.current || 0;
-  const originParam = typeof window !== 'undefined' && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : '';
-  const widgetReferrer = typeof window !== 'undefined' && window.location.href ? `&widget_referrer=${encodeURIComponent(window.location.href)}` : '';
+  // YouTube embed policy: origin=localhost or capacitor:// triggers error 150/101.
+  // When running on native mobile (Capacitor/localhost), use the production web origin for authorized embed handshake.
+  const isLocalOrCapacitor = typeof window !== 'undefined' && (!window.location.origin || window.location.origin.includes('localhost') || window.location.origin.includes('capacitor:'));
+  const originBase = isLocalOrCapacitor ? 'https://sanjusreejith.github.io' : window.location.origin;
+  const originParam = `&origin=${encodeURIComponent(originBase)}`;
+  const widgetReferrer = `&widget_referrer=${encodeURIComponent(originBase)}`;
   // Privacy-enhanced embed domain with pre-muted autoplay for instant ad suppression
   const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
 
