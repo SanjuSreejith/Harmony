@@ -827,6 +827,22 @@ export function PlayerProvider({ children }) {
       if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       console.warn('[Audio Error on HTML5 audio element]', e);
       if (currentTrackRef.current) {
+        if (!hasFailedOverRef.current) {
+          hasFailedOverRef.current = true;
+          const fallbackUrl = getFallbackStreamUrl(currentTrackRef.current.id, audioQualityRef.current || 'best');
+          if (fallbackUrl && audioRef.current) {
+            console.log('[Player] Retrying with failover stream:', fallbackUrl);
+            audioRef.current.src = fallbackUrl;
+            audioRef.current.load();
+            audioRef.current.play().catch(() => {
+              setUseDirectPlayer(true);
+              useDirectPlayerRef.current = true;
+              setIsPlaying(true);
+              setIsLoading(true);
+            });
+            return;
+          }
+        }
         // If the HTML audio stream fails, release its decoder before switching engines.
         console.log('[Player] Server stream failed. Switching to the fallback player.');
         if (audioRef.current) {
@@ -1170,36 +1186,14 @@ export function PlayerProvider({ children }) {
         streamUrl = getAudioStreamUrl(track.id, audioQuality);
       }
 
-      // Check if this stream is directed to the Render cloud server
-      const isCloudStream = Boolean(streamUrl && streamUrl.includes('onrender.com'));
-      if (isCloudStream) {
-        // Render cloud server cannot decipher YouTube streams (HTTP 500 error).
-        // Instantly switch to the verified zero-ad direct player engine so playback begins without hanging!
-        console.log('[Player] Cloud stream detected without PC server. Routing directly to direct player engine:', track.id);
-        if (audioRef.current) {
-          try {
-            audioRef.current.pause();
-            audioRef.current.removeAttribute('src');
-            audioRef.current.srcObject = null;
-            audioRef.current.load();
-          } catch (e) {}
-        }
-        nativePlaybackRef.current = false;
-        setUseDirectPlayer(true);
-        useDirectPlayerRef.current = true;
-        setIsPlaying(true);
-        setIsLoading(true);
-        return;
-      }
-
       // Normal mode: Standard audio engine is active with real audio stream
       setUseDirectPlayer(false);
       useDirectPlayerRef.current = false;
 
-      // If running on native Android with a valid LAN/PC stream URL:
+      // If running on native Android with a valid stream URL (LAN PC or Cloud):
       // Stream directly through the native Foreground Service's MediaPlayer.
       // This enables 100% background playback even when the app is completely exited, screen is off, or phone is locked (Spotify behavior)!
-      if (isNativePlatform() && streamUrl && streamUrl.startsWith('http') && !isCloudStream) {
+      if (isNativePlatform() && streamUrl && streamUrl.startsWith('http')) {
         console.log('[Player] Native Android: Starting native MediaPlayer in ForegroundService:', streamUrl);
         const played = await playNativeStream({
           url: streamUrl,

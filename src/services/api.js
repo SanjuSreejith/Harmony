@@ -2,14 +2,15 @@
 import { Capacitor } from '@capacitor/core';
 
 export const CLOUD_FALLBACK_SERVER = 'https://harmoniq-server-jqpm.onrender.com';
+export const PC_WIFI_SERVER = 'http://10.128.89.220:3000';     // Wi-Fi LAN (Active)
 export const PC_USB_SERVER = 'http://10.210.177.65:3000';      // USB Tethering (High Speed)
-export const PC_WIFI_SERVER = 'http://10.128.89.220:3000';     // Wi-Fi LAN
 export const PC_HOTSPOT_SERVER = 'http://192.168.137.1:3000';  // Windows Mobile Hotspot
-export const PC_LAN_SERVER = PC_USB_SERVER;
+export const PC_LAN_SERVER = PC_WIFI_SERVER;
 
 export const KNOWN_LAN_SERVERS = [
-  PC_USB_SERVER,
   PC_WIFI_SERVER,
+  'http://10.128.89.220:3000',
+  PC_USB_SERVER,
   PC_HOTSPOT_SERVER,
   'http://192.168.43.1:3000',  // Android Hotspot Gateway
   'http://192.168.42.1:3000',  // Android USB Gateway
@@ -26,6 +27,11 @@ export const SERVER_MODES = {
 
 // Cache active server in memory & localStorage for instant zero-delay access
 let cachedServer = null;
+if (typeof localStorage !== 'undefined') {
+  try {
+    cachedServer = localStorage.getItem('harmoniq_last_working_server') || null;
+  } catch (e) {}
+}
 let lastPingTime = 0;
 let isResolving = false;
 
@@ -178,6 +184,13 @@ export async function resolveServer(force = false) {
     return '';
   }
 
+  // If in web browser on HTTPS (like GitHub Pages https://sanjusreejith.github.io/Harmony/),
+  // browsers strictly block http:// LAN requests as Mixed Content. Use 24/7 Cloud server directly.
+  if (typeof window !== 'undefined' && !isNative && window.location.protocol === 'https:') {
+    cachedServer = CLOUD_FALLBACK_SERVER;
+    return CLOUD_FALLBACK_SERVER;
+  }
+
   const selection = getServerSelection();
   const now = Date.now();
 
@@ -237,12 +250,12 @@ export async function resolveServer(force = false) {
     return cachedServer;
   }
 
-  if (isResolving) return cachedServer || CLOUD_FALLBACK_SERVER;
+  if (isResolving) return cachedServer || (isNative ? PC_WIFI_SERVER : CLOUD_FALLBACK_SERVER);
   isResolving = true;
 
   // Probe PC endpoints in parallel with responsive 1200ms timeout
   try {
-    const lanEndpoints = [PC_USB_SERVER, PC_WIFI_SERVER, PC_HOTSPOT_SERVER];
+    const lanEndpoints = [PC_WIFI_SERVER, 'http://10.128.89.220:3000', PC_USB_SERVER, PC_HOTSPOT_SERVER];
     const pingPromises = lanEndpoints.map(srv => pingServer(srv, 1200));
     const results = await Promise.all(pingPromises);
     const valid = results.filter(Boolean);
@@ -251,6 +264,7 @@ export async function resolveServer(force = false) {
       const winningLocal = valid[0].url;
       cachedServer = winningLocal;
       lastPingTime = now;
+      try { localStorage.setItem('harmoniq_last_working_server', winningLocal); } catch (e) {}
       isResolving = false;
       return winningLocal;
     }
@@ -259,6 +273,7 @@ export async function resolveServer(force = false) {
   // If PC is offline or unpingable, seamless 24/7 Cloud failover!
   cachedServer = CLOUD_FALLBACK_SERVER;
   lastPingTime = now;
+  try { localStorage.setItem('harmoniq_last_working_server', CLOUD_FALLBACK_SERVER); } catch (e) {}
   isResolving = false;
   return CLOUD_FALLBACK_SERVER;
 }
@@ -278,12 +293,15 @@ export function getServerUrl() {
   if (typeof window !== 'undefined' && !isNative && (isLocalhost() || window.location.port === '3000')) {
     return '';
   }
+  if (typeof window !== 'undefined' && !isNative && window.location.protocol === 'https:') {
+    return CLOUD_FALLBACK_SERVER;
+  }
   const selection = getServerSelection();
   if (selection.mode === SERVER_MODES.CLOUD) return CLOUD_FALLBACK_SERVER;
   if (selection.mode === SERVER_MODES.USB) return PC_USB_SERVER;
   if (selection.mode === SERVER_MODES.WIFI) return PC_WIFI_SERVER;
   if (selection.mode === SERVER_MODES.CUSTOM && selection.url) return selection.url;
-  return (cachedServer !== null && cachedServer !== undefined) ? cachedServer : CLOUD_FALLBACK_SERVER;
+  return (cachedServer !== null && cachedServer !== undefined) ? cachedServer : (isNative ? PC_WIFI_SERVER : CLOUD_FALLBACK_SERVER);
 }
 
 export function setServerUrl(url) {
@@ -296,7 +314,7 @@ export function setServerUrl(url) {
 
 export function getFallbackStreamUrl(videoId, quality = 'best') {
   const current = getServerUrl();
-  const fallback = current.includes(CLOUD_FALLBACK_SERVER) ? PC_USB_SERVER : CLOUD_FALLBACK_SERVER;
+  const fallback = current.includes(CLOUD_FALLBACK_SERVER) ? PC_WIFI_SERVER : CLOUD_FALLBACK_SERVER;
   cachedServer = fallback;
   return `${fallback}/api/stream/${videoId}?quality=${quality}`;
 }

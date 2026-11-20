@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { usePlayer } from '../context/PlayerContext';
 
 /**
@@ -331,7 +332,7 @@ export default function BackgroundDirectPlayer() {
   const startSec = startSecRef.current || 0;
   // YouTube embed policy: In Capacitor native mobile (capacitor://), origin is non-HTTP so use verified web origin.
   // In web browsers (including http://localhost:3000), always match window.location.origin so postMessage events are delivered!
-  const isCapacitorNative = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || window.location.origin.includes('capacitor:'));
+  const isCapacitorNative = typeof window !== 'undefined' && (Capacitor.isNativePlatform() || window.location.protocol === 'capacitor:' || window.location.origin.includes('capacitor:') || (window.location.hostname === 'localhost' && !window.location.port));
   const originBase = isCapacitorNative
     ? 'https://sanjusreejith.github.io'
     : (typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://sanjusreejith.github.io');
