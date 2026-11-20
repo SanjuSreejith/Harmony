@@ -329,10 +329,12 @@ export default function BackgroundDirectPlayer() {
   if (!shouldBeActive || !currentTrack) return null;
 
   const startSec = startSecRef.current || 0;
-  // YouTube embed policy: origin=localhost or capacitor:// triggers error 150/101.
-  // When running on native mobile (Capacitor/localhost), use the production web origin for authorized embed handshake.
-  const isLocalOrCapacitor = typeof window !== 'undefined' && (!window.location.origin || window.location.origin.includes('localhost') || window.location.origin.includes('capacitor:'));
-  const originBase = isLocalOrCapacitor ? 'https://sanjusreejith.github.io' : window.location.origin;
+  // YouTube embed policy: In Capacitor native mobile (capacitor://), origin is non-HTTP so use verified web origin.
+  // In web browsers (including http://localhost:3000), always match window.location.origin so postMessage events are delivered!
+  const isCapacitorNative = typeof window !== 'undefined' && (window.location.protocol === 'capacitor:' || window.location.origin.includes('capacitor:'));
+  const originBase = isCapacitorNative
+    ? 'https://sanjusreejith.github.io'
+    : (typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://sanjusreejith.github.io');
   const originParam = `&origin=${encodeURIComponent(originBase)}`;
   const widgetReferrer = `&widget_referrer=${encodeURIComponent(originBase)}`;
   // Privacy-enhanced embed domain with pre-muted autoplay for instant ad suppression
@@ -342,13 +344,14 @@ export default function BackgroundDirectPlayer() {
     <div
       style={{
         position: 'fixed',
-        bottom: 0,
-        right: 0,
-        width: '1px',
-        height: '1px',
-        opacity: 0.01,
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        opacity: 1,
         pointerEvents: 'none',
-        zIndex: -1,
+        zIndex: -9999,
+        visibility: 'visible',
         overflow: 'hidden'
       }}
       aria-hidden="true"
@@ -358,7 +361,7 @@ export default function BackgroundDirectPlayer() {
         key={currentTrack.id}
         src={embedUrl}
         title="Harmoniq Audio Engine"
-        allow="autoplay; encrypted-media; picture-in-picture; clipboard-write"
+        allow="autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
         importance="high"
         style={{ width: '100%', height: '100%', border: 'none' }}
       />

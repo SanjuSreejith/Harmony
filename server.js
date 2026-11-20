@@ -90,15 +90,15 @@ async function getInnertube() {
 
   ytInitPromise = (async () => {
     try {
-      console.log('[Musicit] Initializing YouTube client engine (IOS)...');
-      ytClient = await Innertube.create({ client_type: ClientType.IOS });
+      console.log('[Musicit] Initializing YouTube client engine (VISIONOS)...');
+      ytClient = await Innertube.create({ client_type: ClientType.VISIONOS });
       console.log('[Musicit] YouTube client initialized successfully!');
       return ytClient;
     } catch (err) {
-      console.error('[Musicit] Failed to init Innertube with IOS client:', err.message);
+      console.error('[Musicit] Failed to init Innertube with VISIONOS client:', err.message);
       try {
-        console.log('[Musicit] Fallback: Initializing with MWEB client...');
-        ytClient = await Innertube.create({ client_type: ClientType.MWEB });
+        console.log('[Musicit] Fallback: Initializing with IOS client...');
+        ytClient = await Innertube.create({ client_type: ClientType.IOS });
         return ytClient;
       } catch (fallbackErr) {
         ytInitPromise = null;
@@ -424,6 +424,9 @@ app.get('/api/stream/:videoId', async (req, res) => {
         }
 
         const upstreamRes = await fetch(directUrl, { headers: fetchHeaders });
+        if (!upstreamRes.ok || upstreamRes.status >= 400) {
+          throw new Error(`Upstream directUrl failed with status ${upstreamRes.status}`);
+        }
         res.status(upstreamRes.status);
         res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Access-Control-Allow-Origin', '*');

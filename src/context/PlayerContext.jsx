@@ -127,23 +127,14 @@ export function PlayerProvider({ children }) {
   const isLoadingRef = useRef(false);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
   const [playbackError, setPlaybackError] = useState(null);
-  const [useDirectPlayer, setUseDirectPlayerState] = useState(() => {
-    try {
-      return localStorage.getItem('musicit_use_direct_player') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const useDirectPlayerRef = useRef(useDirectPlayer);
+  const [useDirectPlayer, setUseDirectPlayerState] = useState(false);
+  const useDirectPlayerRef = useRef(false);
   const nativePlaybackRef = useRef(false);
   const playbackActionsRef = useRef({});
   const setUseDirectPlayer = (val) => {
     const bool = Boolean(val);
     useDirectPlayerRef.current = bool;
     setUseDirectPlayerState(bool);
-    try {
-      localStorage.setItem('musicit_use_direct_player', bool ? 'true' : 'false');
-    } catch {}
   };
 
   // Active Indian language filter on Home
@@ -1060,6 +1051,8 @@ export function PlayerProvider({ children }) {
       setPlaybackError(null);
       setCurrentTrack(track);
       setIsLoading(true);
+      setUseDirectPlayer(false);
+      useDirectPlayerRef.current = false;
 
       // Immediately set duration from track metadata so scrubber works right away!
       let initialDuration = 0;
@@ -1167,24 +1160,6 @@ export function PlayerProvider({ children }) {
         } catch (e) {}
       }
 
-      if (streamUrl) {
-        setUseDirectPlayer(false);
-        useDirectPlayerRef.current = false;
-      } else if (useDirectPlayerRef.current) {
-        // Keep the fallback iframe as the only active audio engine.
-        if (audioRef.current) {
-          try {
-            audioRef.current.pause();
-            audioRef.current.removeAttribute('src');
-            audioRef.current.srcObject = null;
-            audioRef.current.load();
-          } catch (e) {}
-        }
-        setIsPlaying(true);
-        setIsLoading(true);
-        return;
-      }
-
       if (!streamUrl) {
         try {
           streamUrl = await getPlayableAudioStreamUrl(track.id, audioQuality);
@@ -1216,6 +1191,10 @@ export function PlayerProvider({ children }) {
         setIsLoading(true);
         return;
       }
+
+      // Normal mode: Standard audio engine is active with real audio stream
+      setUseDirectPlayer(false);
+      useDirectPlayerRef.current = false;
 
       // If running on native Android with a valid LAN/PC stream URL:
       // Stream directly through the native Foreground Service's MediaPlayer.

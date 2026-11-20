@@ -171,6 +171,13 @@ export async function testServerConnection(targetUrl = null) {
 
 export async function resolveServer(force = false) {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
+
+  // If in web browser on localhost / port 3000, always use the local PC server directly with 0ms delay
+  if (typeof window !== 'undefined' && !isNative && (isLocalhost() || window.location.port === '3000')) {
+    cachedServer = '';
+    return '';
+  }
+
   const selection = getServerSelection();
   const now = Date.now();
 
@@ -178,14 +185,6 @@ export async function resolveServer(force = false) {
   if (selection.mode === SERVER_MODES.CLOUD) {
     cachedServer = CLOUD_FALLBACK_SERVER;
     return CLOUD_FALLBACK_SERVER;
-  }
-
-  // 2. If in web browser on localhost / 127.0.0.1 and PC server is active
-  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
-    // If local dev server is running on port 3000, use it
-    if (selection.mode !== SERVER_MODES.CLOUD) {
-      return '';
-    }
   }
 
   // 2. Explicit USB mode selected by user
@@ -276,14 +275,14 @@ export async function getApiBase() {
 
 export function getServerUrl() {
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
+  if (typeof window !== 'undefined' && !isNative && (isLocalhost() || window.location.port === '3000')) {
+    return '';
+  }
   const selection = getServerSelection();
   if (selection.mode === SERVER_MODES.CLOUD) return CLOUD_FALLBACK_SERVER;
   if (selection.mode === SERVER_MODES.USB) return PC_USB_SERVER;
   if (selection.mode === SERVER_MODES.WIFI) return PC_WIFI_SERVER;
   if (selection.mode === SERVER_MODES.CUSTOM && selection.url) return selection.url;
-  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
-    return '';
-  }
   return (cachedServer !== null && cachedServer !== undefined) ? cachedServer : CLOUD_FALLBACK_SERVER;
 }
 
@@ -461,16 +460,17 @@ export async function getPlayableAudioStreamUrl(videoId, quality = 'best') {
   if (!videoId) return null;
 
   const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
+
+  // In web browser on localhost when PC server is active, stream relative immediately for 0ms delay
+  if (typeof window !== 'undefined' && !isNative && (isLocalhost() || window.location.port === '3000')) {
+    return `/api/stream/${videoId}?quality=${quality}`;
+  }
+
   const selection = getServerSelection();
 
   // If Cloud mode is selected, direct to Cloud stream
   if (selection.mode === SERVER_MODES.CLOUD) {
     return `${CLOUD_FALLBACK_SERVER}/api/stream/${videoId}?quality=${quality}`;
-  }
-
-  // In web browser on localhost when PC server is active, stream relative immediately for 0ms delay
-  if (typeof window !== 'undefined' && !isNative && isLocalhost()) {
-    return `/api/stream/${videoId}?quality=${quality}`;
   }
 
   // Never make playback wait for the LAN server scan. Resolve the best server in
