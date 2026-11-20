@@ -3,8 +3,7 @@ import { usePlayer } from '../context/PlayerContext';
 
 /**
  * BackgroundDirectPlayer
- * Seamless zero-server fallback player that streams YouTube audio with zero latency.
- * Only activates when streamUrl fails or server is off.
+ * Fallback player used when the app's direct audio stream is unavailable.
  * Strictly pauses when user enters Video Mode to prevent dual-audio conflict.
  */
 export default function BackgroundDirectPlayer() {
@@ -30,7 +29,6 @@ export default function BackgroundDirectPlayer() {
   const ytPlayerStateRef = useRef(-1); // -1 = unstarted, 1 = playing, 2 = paused, 3 = buffering, 0 = ended
   const isAdActiveRef = useRef(false);
   const confirmedVideoIdRef = useRef(null);
-  const timerRef = useRef(null);
   const startSecRef = useRef(0);
   const currentTimeRef = useRef(0);
 
@@ -62,41 +60,6 @@ export default function BackgroundDirectPlayer() {
       } catch (e) {}
     }
   }
-
-  // Smooth live timeline ticker while active
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    if (shouldBeActive && isPlaying) {
-      timerRef.current = setInterval(() => {
-        sendCommand('getCurrentTime');
-        sendCommand('getDuration');
-
-        // Continuous Ad Neutralizer:
-        // While an ad is active, force mute, max speed, seek to 9999, and skip
-        if (isAdActiveRef.current) {
-          sendCommand('mute');
-          sendCommand('setVolume', [0]);
-          sendCommand('setPlaybackRate', [2]);
-          sendCommand('seekTo', [9999, true]);
-          sendCommand('skipAd');
-        }
-
-        // When tab is hidden in background, actively ensure playback state is retained
-        if (document.hidden && (!isUserPausedRef || !isUserPausedRef.current)) {
-          if (isAdActiveRef.current) {
-            sendCommand('mute');
-            sendCommand('setVolume', [0]);
-          }
-          sendCommand('playVideo');
-        }
-      }, 200);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [shouldBeActive, isPlaying, isUserPausedRef]);
 
   // Handle Play / Pause commands
   useEffect(() => {
@@ -339,10 +302,11 @@ export default function BackgroundDirectPlayer() {
     return () => window.removeEventListener('message', handleMessage);
   }, [shouldBeActive, handleTrackEnded, isPlaying, isMuted, volume, currentTrack?.duration, currentTrack?.id, isUserPausedRef]);
 
-  // Keep background audio active when tab is minimized, switched, or screen is locked
+  // Recover the embedded player when returning to the page. Do not issue commands
+  // while it is hidden or closing; browsers may throttle or discard those messages.
   useEffect(() => {
     function handleVisibilityChange() {
-      if (shouldBeActive && isPlaying && (!isUserPausedRef || !isUserPausedRef.current)) {
+      if (document.visibilityState === 'visible' && shouldBeActive && isPlaying && (!isUserPausedRef || !isUserPausedRef.current)) {
         if (isAdActiveRef.current) {
           sendCommand('mute');
           sendCommand('setVolume', [0]);
@@ -355,14 +319,10 @@ export default function BackgroundDirectPlayer() {
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
-    window.addEventListener('pagehide', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
-      window.removeEventListener('pagehide', handleVisibilityChange);
     };
   }, [shouldBeActive, isPlaying, isUserPausedRef, isMuted, volume]);
 

@@ -473,9 +473,9 @@ export async function getPlayableAudioStreamUrl(videoId, quality = 'best') {
     return `/api/stream/${videoId}?quality=${quality}`;
   }
 
-  // Resolve optimal server (PC if reachable, otherwise Cloud)
-  const srv = await resolveServer();
-  const base = (srv !== null && srv !== undefined && srv !== '') ? srv : CLOUD_FALLBACK_SERVER;
+  // Never make playback wait for the LAN server scan. Resolve the best server in
+  // the background, while starting against the last known server (or cloud).
+  const base = getServerUrl() || CLOUD_FALLBACK_SERVER;
 
   // Return proxy stream URL (Streamed by Node.js with HTTP 206 Partial Content)
   // Guarantees zero 403 Forbidden IP mismatch errors on PC and Cloud!

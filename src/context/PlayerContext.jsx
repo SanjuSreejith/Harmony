@@ -44,9 +44,6 @@ import {
 
 const PlayerContext = createContext(null);
 
-// Continuous 1-second silent WAV base64 loop to maintain Android/iOS media focus & background wake lock
-const SILENT_AUDIO_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-
 export function PlayerProvider({ children }) {
   const audioRef = useRef(null);
   const pendingSeekRef = useRef(null);
@@ -56,6 +53,8 @@ export function PlayerProvider({ children }) {
   const trebleFilterRef = useRef(null);
   const hasRealAudioStartedRef = useRef(false);
   const isUserPausedRef = useRef(false);
+  const suppressBackgroundServiceSyncRef = useRef(false);
+  const ignoreNextServiceStopRef = useRef(false);
   const [hasRealAudioStarted, setHasRealAudioStarted] = useState(false);
 
   // When useDirectPlayer is restored from localStorage on page reload,
@@ -136,6 +135,8 @@ export function PlayerProvider({ children }) {
     }
   });
   const useDirectPlayerRef = useRef(useDirectPlayer);
+  const nativePlaybackRef = useRef(false);
+  const playbackActionsRef = useRef({});
   const setUseDirectPlayer = (val) => {
     const bool = Boolean(val);
     useDirectPlayerRef.current = bool;
@@ -288,7 +289,7 @@ export function PlayerProvider({ children }) {
   function setVolume(vol) {
     const clamped = Math.max(0, Math.min(1, vol));
     setVolumeState(clamped);
-    if (isNativePlatform()) {
+    if (nativePlaybackRef.current) {
       setNativeVolume(clamped);
     }
     if (audioRef.current) {
@@ -300,11 +301,11 @@ export function PlayerProvider({ children }) {
   function toggleMute() {
     if (isMuted) {
       const v = volume || 1.0;
-      if (isNativePlatform()) setNativeVolume(v);
+      if (nativePlaybackRef.current) setNativeVolume(v);
       if (audioRef.current) audioRef.current.volume = v;
       setIsMuted(false);
     } else {
-      if (isNativePlatform()) setNativeVolume(0);
+      if (nativePlaybackRef.current) setNativeVolume(0);
       if (audioRef.current) audioRef.current.volume = 0;
       setIsMuted(true);
     }
@@ -499,6 +500,10 @@ export function PlayerProvider({ children }) {
 
   // Synchronize Android foreground service with music playback state, controls, and details
   useEffect(() => {
+    if (suppressBackgroundServiceSyncRef.current && !isPlaying) {
+      return;
+    }
+    suppressBackgroundServiceSyncRef.current = false;
     if (currentTrack) {
       startBackgroundAudio(
         currentTrack.title,
@@ -513,118 +518,25 @@ export function PlayerProvider({ children }) {
     }
   }, [isPlaying, currentTrack?.id, currentTrack?.title, currentTrack?.thumbnail]);
 
-  // Audible Web Audio Keepalive Engine:
-  // Emits an inaudible 20 Hz sub-bass carrier wave (-76dB) via AudioContext.
-  // Connects to ctx.destination and creates a live MediaStream for the HTML5 <audio> element.
-  // Chrome identifies the tab as "Audible" (speaker icon), permanently exempting the tab
-  // and all its iframes from background throttling, freezing, or suspension when switching tabs!
-  const audibleKeepAliveRef = useRef(null);
-
-  function startAudibleKeepAlive() {
-    try {
-      if (audibleKeepAliveRef.current?.ctx) {
-        if (audibleKeepAliveRef.current.ctx.state === 'suspended') {
-          audibleKeepAliveRef.current.ctx.resume().catch(() => {});
-        }
-        return;
-      }
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
-      }
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 20; // 20 Hz inaudible sub-carrier
-      gain.gain.value = 0.005; // 20 Hz sub-carrier at -46 dB: activates browser's audible keepalive threshold (> -60dB) to prevent tab throttling, while physically inaudible on speakers/headphones
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      let stream = null;
-      try {
-        if (ctx.createMediaStreamDestination) {
-          const streamDest = ctx.createMediaStreamDestination();
-          gain.connect(streamDest);
-          stream = streamDest.stream;
-        }
-      } catch (err) {}
-
-      osc.start();
-      audibleKeepAliveRef.current = { ctx, osc, gain, stream };
-    } catch (e) {}
-  }
-
-  function pauseAudibleKeepAlive() {
-    try {
-      if (audibleKeepAliveRef.current?.ctx && audibleKeepAliveRef.current.ctx.state === 'running') {
-        audibleKeepAliveRef.current.ctx.suspend().catch(() => {});
-      }
-    } catch (e) {}
-  }
-
-  function resumeAudibleKeepAlive() {
-    try {
-      if (audibleKeepAliveRef.current?.ctx && audibleKeepAliveRef.current.ctx.state === 'suspended') {
-        audibleKeepAliveRef.current.ctx.resume().catch(() => {});
-      } else {
-        startAudibleKeepAlive();
-      }
-    } catch (e) {}
-  }
-
-  // Mobile & Background Tab Audio Wake-Lock Keepalive:
-  // When useDirectPlayer is active, feed the HTML5 <audio> element with live Web Audio MediaStream
-  // or looping audio so browser media controls and background audio priority never stall!
-  // Also bootstrap the keepalive on mount when useDirectPlayer was restored from localStorage.
+  // Browsers can suspend an HTML audio stream while a tab is hidden. Resume it when
+  // the user returns, but never override an explicit pause or an active video player.
   useEffect(() => {
-    if (useDirectPlayer && isPlaying) {
-      // Ensure the audible keepalive oscillator is running first
-      startAudibleKeepAlive();
+    function resumeVisibleAudio() {
+      if (document.visibilityState !== 'visible') return;
+      if (isUserPausedRef.current || useDirectPlayerRef.current || nativePlaybackRef.current || isVideoModeRef.current) return;
+      const audio = audioRef.current;
+      if (!audio || !audio.src || !audio.paused || !currentTrackRef.current) return;
+
+      audio.play().then(() => setIsPlaying(true)).catch(() => {});
     }
 
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    if (useDirectPlayer && isPlaying) {
-      try {
-        if (audibleKeepAliveRef.current?.stream) {
-          if (audio.srcObject !== audibleKeepAliveRef.current.stream) {
-            audio.removeAttribute('src');
-            audio.srcObject = audibleKeepAliveRef.current.stream;
-          }
-        } else if (audio.src !== SILENT_AUDIO_URI) {
-          audio.srcObject = null;
-          audio.src = SILENT_AUDIO_URI;
-          audio.loop = true;
-        }
-        audio.play().catch(() => {});
-      } catch (e) {}
-    } else if (useDirectPlayer && !isPlaying) {
-      try { audio.pause(); } catch (e) {}
-    }
-  }, [useDirectPlayer, isPlaying]);
-
-  // Screen WakeLock for continuous background playback
-  useEffect(() => {
-    let wakeLock = null;
-    async function requestWake() {
-      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && isPlaying) {
-        try {
-          wakeLock = await navigator.wakeLock.request('screen');
-        } catch (e) {}
-      }
-    }
-    if (isPlaying) {
-      requestWake();
-    }
+    document.addEventListener('visibilitychange', resumeVisibleAudio);
+    window.addEventListener('pageshow', resumeVisibleAudio);
     return () => {
-      if (wakeLock && wakeLock.release) {
-        try { wakeLock.release(); } catch (e) {}
-      }
+      document.removeEventListener('visibilitychange', resumeVisibleAudio);
+      window.removeEventListener('pageshow', resumeVisibleAudio);
     };
-  }, [isPlaying]);
+  }, []);
 
   // Synchronize events from Direct Player (playing / buffering)
   useEffect(() => {
@@ -654,16 +566,16 @@ export function PlayerProvider({ children }) {
     // Exception: when useDirectPlayer is active, we need the heartbeat running even before hasRealAudioStarted
     // because BackgroundDirectPlayer pushes time updates via setCurrentTime directly
     if (!isPlaying || isLoading) return;
+    // The Android foreground service owns its own position ticker and media session.
+    if (nativePlaybackRef.current) return;
     if (!hasRealAudioStarted && !useDirectPlayer) return;
 
     let lastTickTime = Date.now();
-    let tickCount = 0;
 
     const interval = setInterval(() => {
       // Re-verify loading state inside tick: strictly pause slider if loading/buffering
       if (isLoadingRef.current) return;
 
-      tickCount++;
       const now = Date.now();
       const deltaSec = Math.max(0, (now - lastTickTime) / 1000);
       lastTickTime = now;
@@ -685,7 +597,7 @@ export function PlayerProvider({ children }) {
           // 2. Direct player active: smoothly advance timeline based on verified playback ONLY when not loading/buffering
           if (hasRealAudioStartedRef.current && !isLoadingRef.current && isPlaying) {
             const prev = currentTimeRef.current || 0;
-            const safeDelta = Math.min(0.3, deltaSec);
+            const safeDelta = Math.min(1, deltaSec);
             cur = prev + safeDelta;
           } else {
             cur = currentTimeRef.current || 0;
@@ -711,20 +623,7 @@ export function PlayerProvider({ children }) {
         }
       }
 
-      // Live sync position and duration to Android system notification & MediaSession every 1000ms (every 4 ticks)
-      if (tickCount % 4 === 0 && currentTrackRef.current) {
-        const cur = currentTimeRef.current || 0;
-        const dur = durationRef.current || 180;
-        updateBackgroundPlayback(
-          currentTrackRef.current.title,
-          currentTrackRef.current.displayArtist || currentTrackRef.current.artist || 'Harmoniq',
-          isPlaying,
-          Math.floor(cur),
-          Math.floor(dur),
-          currentTrackRef.current.thumbnail || ''
-        );
-      }
-    }, 250);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [isPlaying, isLoading, hasRealAudioStarted, useDirectPlayer]);
@@ -733,20 +632,30 @@ export function PlayerProvider({ children }) {
   useEffect(() => {
     const subPromise = addMediaActionListener((action, position) => {
       if (action === 'toggle') {
-        togglePlay();
+        playbackActionsRef.current.togglePlay?.();
       } else if (action === 'play') {
-        resumeTrack();
+        playbackActionsRef.current.resumeTrack?.();
       } else if (action === 'pause') {
-        pauseTrack();
+        playbackActionsRef.current.pauseTrack?.();
       } else if (action === 'next') {
-        playNext();
+        playbackActionsRef.current.playNext?.();
       } else if (action === 'previous') {
-        playPrevious();
+        playbackActionsRef.current.playPrevious?.();
       } else if (action === 'seek' && typeof position === 'number') {
-        seekTo(position);
+        playbackActionsRef.current.seekTo?.(position);
       } else if (action === 'stop') {
-        pauseTrack();
-        stopBackgroundAudio();
+        if (ignoreNextServiceStopRef.current) {
+          ignoreNextServiceStopRef.current = false;
+          return;
+        }
+        suppressBackgroundServiceSyncRef.current = true;
+        if (nativePlaybackRef.current) {
+          nativePlaybackRef.current = false;
+          isUserPausedRef.current = true;
+          setIsPlaying(false);
+        } else {
+          playbackActionsRef.current.pauseTrack?.();
+        }
       }
     });
 
@@ -779,9 +688,12 @@ export function PlayerProvider({ children }) {
     const errorPromise = addPlaybackErrorListener((err) => {
       console.warn('[Native Audio] Native MediaPlayer error event:', err);
       // Fallback seamlessly to direct player
+      nativePlaybackRef.current = false;
+      ignoreNextServiceStopRef.current = true;
+      stopBackgroundAudio();
       setUseDirectPlayer(true);
       setIsPlaying(true);
-      setIsLoading(false);
+      setIsLoading(true);
     });
 
     return () => {
@@ -801,11 +713,12 @@ export function PlayerProvider({ children }) {
     audioRef.current = audio;
 
     const handlePlay = () => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       setIsPlaying(true);
     };
     const handlePause = () => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
+      if (!isUserPausedRef.current && document.visibilityState === 'hidden') return;
       setIsPlaying(false);
       if (audio && !isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
         currentTimeRef.current = audio.currentTime;
@@ -813,15 +726,15 @@ export function PlayerProvider({ children }) {
       }
     };
     const handleWaiting = () => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       setIsLoading(true);
     };
     const handleStalled = () => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       setIsLoading(true);
     };
     const handleCanPlay = () => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       if (pendingSeekRef.current !== null && pendingSeekRef.current > 0) {
         try {
           audio.currentTime = pendingSeekRef.current;
@@ -830,7 +743,7 @@ export function PlayerProvider({ children }) {
       }
     };
     const handlePlaying = () => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       hasRealAudioStartedRef.current = true;
       setHasRealAudioStarted(true);
       setIsLoading(false);
@@ -845,7 +758,7 @@ export function PlayerProvider({ children }) {
     };
     
     const handleTimeUpdate = () => {
-      if (typeof audio.currentTime === 'number' && isFinite(audio.currentTime) && !useDirectPlayer) {
+      if (typeof audio.currentTime === 'number' && isFinite(audio.currentTime) && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
         if (!isVideoModeRef.current) {
           // Ignore transient stale updates while a seek is landing
           if (pendingSeekRef.current !== null && Math.abs(audio.currentTime - pendingSeekRef.current) > 2) {
@@ -863,11 +776,11 @@ export function PlayerProvider({ children }) {
           }
         }
       }
-      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity && !useDirectPlayer) {
+      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
         setDuration(audio.duration);
       }
       try {
-        if (audio.buffered && audio.buffered.length > 0 && !useDirectPlayer) {
+        if (audio.buffered && audio.buffered.length > 0 && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
           const end = audio.buffered.end(audio.buffered.length - 1);
           const totalDur = (audio.duration && isFinite(audio.duration) && audio.duration > 0) ? audio.duration : 1;
           setBuffered((end / totalDur) * 100);
@@ -876,7 +789,7 @@ export function PlayerProvider({ children }) {
       updatePositionState();
 
       // Record listening telemetry & affinity tracking (discounted priority if track was autoplayed)
-      if (currentTrackRef.current && !useDirectPlayer) {
+      if (currentTrackRef.current && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
         recordListeningProgress(currentTrackRef.current, audio.currentTime, audio.duration || 0, isAutoplayRef.current);
 
         // Reinforcement Learning reward milestones
@@ -894,13 +807,13 @@ export function PlayerProvider({ children }) {
       }
 
       // Pre-warm next song for zero-latency gapless transitions (> 80%)
-      if (audio.duration > 0 && audio.currentTime / audio.duration > 0.8 && !useDirectPlayer) {
+      if (audio.duration > 0 && audio.currentTime / audio.duration > 0.8 && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
         checkPrewarmNext();
       }
     };
 
     const handleLoadedMetadata = () => {
-      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity && !useDirectPlayer) {
+      if (audio.duration && isFinite(audio.duration) && audio.duration > 0 && audio.duration !== Infinity && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
         setDuration(audio.duration);
       }
       updatePositionState();
@@ -913,31 +826,24 @@ export function PlayerProvider({ children }) {
     };
 
     const handleEnded = () => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       if (handleTrackEndedRef.current) {
         handleTrackEndedRef.current();
       }
     };
 
     const handleError = (e) => {
-      if (useDirectPlayerRef.current) return;
+      if (useDirectPlayerRef.current || nativePlaybackRef.current) return;
       console.warn('[Audio Error on HTML5 audio element]', e);
       if (currentTrackRef.current) {
-        // If HTML5 audio stream fails (e.g. Render cold start or network glitch),
-        // seamlessly failover to Direct Player with background wake-lock and Audible tab engine!
-        console.log('[Player] Server stream error. Seamlessly switching to Direct Player with background wake-lock!');
-        startAudibleKeepAlive();
+        // If the HTML audio stream fails, release its decoder before switching engines.
+        console.log('[Player] Server stream failed. Switching to the fallback player.');
         if (audioRef.current) {
           try {
-            if (audibleKeepAliveRef.current?.stream) {
-              audioRef.current.removeAttribute('src');
-              audioRef.current.srcObject = audibleKeepAliveRef.current.stream;
-            } else {
-              audioRef.current.srcObject = null;
-              audioRef.current.src = SILENT_AUDIO_URI;
-              audioRef.current.loop = true;
-            }
-            audioRef.current.play().catch(() => {});
+            audioRef.current.pause();
+            audioRef.current.removeAttribute('src');
+            audioRef.current.srcObject = null;
+            audioRef.current.load();
           } catch (err) {}
         }
         setUseDirectPlayer(true);
@@ -1066,22 +972,23 @@ export function PlayerProvider({ children }) {
         ]
       });
 
-      navigator.mediaSession.setActionHandler('play', () => togglePlay());
-      navigator.mediaSession.setActionHandler('pause', () => togglePlay());
-      navigator.mediaSession.setActionHandler('previoustrack', () => playPrevious());
-      navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
+      navigator.mediaSession.setActionHandler('play', () => playbackActionsRef.current.resumeTrack?.());
+      navigator.mediaSession.setActionHandler('pause', () => playbackActionsRef.current.pauseTrack?.());
+      navigator.mediaSession.setActionHandler('previoustrack', () => playbackActionsRef.current.playPrevious?.());
+      navigator.mediaSession.setActionHandler('nexttrack', () => playbackActionsRef.current.playNext?.());
       navigator.mediaSession.setActionHandler('seekto', (details) => {
         if (details.seekTime != null) {
-          seekTo(details.seekTime);
+          playbackActionsRef.current.seekTo?.(details.seekTime);
         }
       });
       navigator.mediaSession.setActionHandler('seekbackward', (details) => {
         const offset = details.seekOffset || 10;
-        seekTo(Math.max(0, (audioRef.current?.currentTime || 0) - offset));
+        playbackActionsRef.current.seekTo?.(Math.max(0, (audioRef.current?.currentTime || currentTimeRef.current || 0) - offset));
       });
       navigator.mediaSession.setActionHandler('seekforward', (details) => {
         const offset = details.seekOffset || 10;
-        seekTo(Math.min(duration, (audioRef.current?.currentTime || 0) + offset));
+        const current = audioRef.current?.currentTime || currentTimeRef.current || 0;
+        playbackActionsRef.current.seekTo?.(Math.min(durationRef.current || 180, current + offset));
       });
     } catch (e) {
       console.warn('MediaSession setup error:', e);
@@ -1144,7 +1051,10 @@ export function PlayerProvider({ children }) {
 
       isAutoplayRef.current = Boolean(isAutoplay);
       isUserPausedRef.current = false;
-      startAudibleKeepAlive();
+      if (nativePlaybackRef.current) {
+        nativePlaybackRef.current = false;
+        pauseNativeStream().catch(() => {});
+      }
       hasRealAudioStartedRef.current = false;
       setHasRealAudioStarted(false);
       setPlaybackError(null);
@@ -1261,19 +1171,13 @@ export function PlayerProvider({ children }) {
         setUseDirectPlayer(false);
         useDirectPlayerRef.current = false;
       } else if (useDirectPlayerRef.current) {
-        // Direct player active: smoothly transition tracks with zero delay and no server timeout!
-        startAudibleKeepAlive();
+        // Keep the fallback iframe as the only active audio engine.
         if (audioRef.current) {
           try {
-            if (audibleKeepAliveRef.current?.stream) {
-              audioRef.current.removeAttribute('src');
-              audioRef.current.srcObject = audibleKeepAliveRef.current.stream;
-            } else {
-              audioRef.current.srcObject = null;
-              audioRef.current.src = SILENT_AUDIO_URI;
-              audioRef.current.loop = true;
-            }
-            audioRef.current.play().catch(() => {});
+            audioRef.current.pause();
+            audioRef.current.removeAttribute('src');
+            audioRef.current.srcObject = null;
+            audioRef.current.load();
           } catch (e) {}
         }
         setIsPlaying(true);
@@ -1314,6 +1218,7 @@ export function PlayerProvider({ children }) {
         });
 
         if (played) {
+          nativePlaybackRef.current = true;
           setIsPlaying(true);
           setIsLoading(false);
           setUseDirectPlayer(false);
@@ -1329,12 +1234,15 @@ export function PlayerProvider({ children }) {
       }
 
       // Play stream via HTML5 audio element
+      nativePlaybackRef.current = false;
       if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
         audioCtxRef.current.resume().catch(() => {});
       }
 
       const audio = audioRef.current;
       if (audio) {
+        audio.srcObject = null;
+        audio.loop = false;
         audio.src = streamUrl;
         audio.load();
         if (typeof initialSeekTime === 'number' && initialSeekTime > 0) {
@@ -1365,18 +1273,12 @@ export function PlayerProvider({ children }) {
           console.warn('[Player] Local PC audio play failed:', err);
           // Fall back to direct player engine for uninterrupted playback!
           console.log('[Player] Falling back to direct player engine for track:', track.id);
-          startAudibleKeepAlive();
           if (audio) {
             try {
-              if (audibleKeepAliveRef.current?.stream) {
-                audio.removeAttribute('src');
-                audio.srcObject = audibleKeepAliveRef.current.stream;
-              } else {
-                audio.srcObject = null;
-                audio.src = SILENT_AUDIO_URI;
-                audio.loop = true;
-              }
-              audio.play().catch(() => {});
+              audio.pause();
+              audio.removeAttribute('src');
+              audio.srcObject = null;
+              audio.load();
             } catch (e) {}
           }
           setUseDirectPlayer(true);
@@ -1589,21 +1491,19 @@ export function PlayerProvider({ children }) {
       pauseTrack();
     } else {
       isUserPausedRef.current = false;
-      startAudibleKeepAlive();
       resumeTrack();
     }
   }
 
   function pauseTrack() {
     isUserPausedRef.current = true;
-    pauseAudibleKeepAlive();
 
-    if (isNativePlatform()) {
+    if (nativePlaybackRef.current) {
       pauseNativeStream().catch(() => {});
     }
     const audio = audioRef.current;
-    if (audio && !useDirectPlayer) {
-      if (!isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0 && !useDirectPlayer) {
+    if (audio && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
+      if (!isNaN(audio.currentTime) && isFinite(audio.currentTime) && audio.currentTime > 0) {
         currentTimeRef.current = audio.currentTime;
         setCurrentTime(audio.currentTime);
       }
@@ -1625,28 +1525,10 @@ export function PlayerProvider({ children }) {
 
   function resumeTrack(targetSeconds = null) {
     isUserPausedRef.current = false;
-    resumeAudibleKeepAlive();
-
-    if (isNativePlatform()) {
-      resumeNativeStream().catch(() => {});
-    }
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume().catch(() => {});
-    }
-
     const audio = audioRef.current;
     const resumeTime = (typeof targetSeconds === 'number' && isFinite(targetSeconds) && targetSeconds >= 0)
       ? targetSeconds
       : (currentTimeRef.current || currentTime || 0);
-
-    if (resumeTime > 0) {
-      currentTimeRef.current = resumeTime;
-      setCurrentTime(resumeTime);
-      pendingSeekRef.current = resumeTime;
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('harmoniq:seek', { detail: resumeTime }));
-      }
-    }
 
     if (currentTrackRef.current) {
       updateBackgroundPlayback(
@@ -1659,22 +1541,30 @@ export function PlayerProvider({ children }) {
       );
     }
 
-    if (useDirectPlayer) {
+    if (nativePlaybackRef.current) {
+      resumeNativeStream().catch(() => {});
       setIsPlaying(true);
-      if (audio) {
-        if (audibleKeepAliveRef.current?.stream) {
-          if (audio.srcObject !== audibleKeepAliveRef.current.stream) {
-            audio.removeAttribute('src');
-            audio.srcObject = audibleKeepAliveRef.current.stream;
-          }
-        } else if (audio.src !== SILENT_AUDIO_URI) {
-          audio.srcObject = null;
-          audio.src = SILENT_AUDIO_URI;
-          audio.loop = true;
-        }
-        audio.play().catch(() => {});
-      }
       return;
+    }
+
+    if (useDirectPlayerRef.current) {
+      if (resumeTime > 0) {
+        currentTimeRef.current = resumeTime;
+        setCurrentTime(resumeTime);
+        window.dispatchEvent(new CustomEvent('harmoniq:seek', { detail: resumeTime }));
+      }
+      setIsPlaying(true);
+      return;
+    }
+
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume().catch(() => {});
+    }
+
+    if (resumeTime > 0) {
+      currentTimeRef.current = resumeTime;
+      setCurrentTime(resumeTime);
+      pendingSeekRef.current = resumeTime;
     }
 
     if (!audio) {
@@ -1736,7 +1626,7 @@ export function PlayerProvider({ children }) {
     currentTimeRef.current = safeTime;
     setCurrentTime(safeTime);
 
-    if (isNativePlatform()) {
+    if (nativePlaybackRef.current) {
       seekNativeStream(safeTime).catch(() => {});
     }
 
@@ -1746,7 +1636,7 @@ export function PlayerProvider({ children }) {
     }
 
     const audio = audioRef.current;
-    if (audio && !useDirectPlayer) {
+    if (audio && !useDirectPlayerRef.current && !nativePlaybackRef.current) {
       try {
         if (audio.readyState >= 1) {
           audio.currentTime = safeTime;
@@ -2094,6 +1984,15 @@ export function PlayerProvider({ children }) {
       return updated;
     });
   }
+
+  playbackActionsRef.current = {
+    togglePlay,
+    pauseTrack,
+    resumeTrack,
+    seekTo,
+    playNext,
+    playPrevious
+  };
 
   return (
     <PlayerContext.Provider
