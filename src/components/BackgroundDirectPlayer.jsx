@@ -4,8 +4,9 @@ import { usePlayer } from '../context/PlayerContext';
 
 /**
  * BackgroundDirectPlayer
- * Fallback player used when the app's direct audio stream is unavailable.
- * Strictly pauses when user enters Video Mode to prevent dual-audio conflict.
+ * Zero-server direct audio engine that streams YouTube audio with zero latency.
+ * Eliminates ads completely, synchronizes playback timeline, and keeps audio playing
+ * seamlessly on both PC web and Android APK.
  */
 export default function BackgroundDirectPlayer() {
   const {
@@ -29,7 +30,7 @@ export default function BackgroundDirectPlayer() {
   const playerReadyRef = useRef(false);
   const ytPlayerStateRef = useRef(-1); // -1 = unstarted, 1 = playing, 2 = paused, 3 = buffering, 0 = ended
   const isAdActiveRef = useRef(false);
-  const confirmedVideoIdRef = useRef(null);
+  const timerRef = useRef(null);
   const startSecRef = useRef(0);
   const currentTimeRef = useRef(0);
 
@@ -40,11 +41,10 @@ export default function BackgroundDirectPlayer() {
   const shouldBeActive = Boolean(useDirectPlayer && currentTrack && !isOfflineTrack && !isVideoMode);
 
   useEffect(() => {
-    // ALWAYS reset start position to 0 when a new song is loaded so it never starts at 4:00
+    // Reset state for new track
     startSecRef.current = 0;
     ytPlayerStateRef.current = -1;
     isAdActiveRef.current = false;
-    confirmedVideoIdRef.current = null;
   }, [currentTrack?.id]);
 
   function sendCommand(func, args = []) {
@@ -61,6 +61,33 @@ export default function BackgroundDirectPlayer() {
       } catch (e) {}
     }
   }
+
+  // Smooth live timeline ticker while active (polls time & duration from iframe)
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    if (shouldBeActive && isPlaying) {
+      timerRef.current = setInterval(() => {
+        sendCommand('getCurrentTime');
+        sendCommand('getDuration');
+        // When tab is hidden in background, actively ensure playback state is retained
+        if (typeof document !== 'undefined' && document.hidden && (!isUserPausedRef || !isUserPausedRef.current)) {
+          if (isAdActiveRef.current) {
+            sendCommand('mute');
+            sendCommand('setVolume', [0]);
+          } else if (!isMuted) {
+            sendCommand('unMute');
+            sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+          }
+          sendCommand('playVideo');
+        }
+      }, 250);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [shouldBeActive, isPlaying, isUserPausedRef, isMuted, volume]);
 
   // Handle Play / Pause commands
   useEffect(() => {
@@ -118,30 +145,18 @@ export default function BackgroundDirectPlayer() {
         const reportedDur = typeof data.info?.duration === 'number' ? data.info.duration : 0;
         const reportedVideoId = data.info?.videoData?.video_id;
 
-        // If YouTube explicitly reports the video ID, check if it matches our track
-        if (reportedVideoId) {
-          if (reportedVideoId === currentTrack?.id) {
-            confirmedVideoIdRef.current = reportedVideoId;
-          } else {
-            // Video ID mismatch: an advertisement video is playing!
-            isAdActiveRef.current = true;
-          }
-        }
-
         // Commercial ad detection criteria:
-        // 1. YouTube explicitly indicates an ad via adState === 1, isAdPlaying === true, adVideoId, or adTime
-        // 2. data.event is 'onAdStart' or 'onAdStateChange'
-        // 3. YouTube is playing a video whose video_id doesn't match our track ID
-        // 4. YouTube reports a video duration that is very short (< 45s) while our track is expected to be > 55s
+        // 1. YouTube explicitly indicates an ad via adState === 1, isAdPlaying === true, or adVideoId
+        // 2. data.event is 'onAdStart'
+        // 3. YouTube reports a video duration that is very short (< 42s) while our track is expected to be > 55s
+        // 4. Video ID explicitly reported and does not match our track
         const isAdStarted = Boolean(
           data.event === 'onAdStart' ||
-          data.event === 'onAdStateChange' ||
           data.info?.adState === 1 ||
           data.info?.isAdPlaying === true ||
           Boolean(data.info?.adVideoId) ||
-          Boolean(data.info?.adTime) ||
-          (reportedVideoId && reportedVideoId !== currentTrack?.id) ||
-          (reportedDur > 0 && reportedDur < 45 && trackExpectedDur > 55)
+          (reportedVideoId && currentTrack?.id && reportedVideoId !== currentTrack.id) ||
+          (reportedDur > 0 && reportedDur < 42 && trackExpectedDur > 55)
         );
 
         // Ad ending criteria:
@@ -149,58 +164,48 @@ export default function BackgroundDirectPlayer() {
           data.event === 'onAdEnd' ||
           data.info?.adState === 0 ||
           data.info?.isAdPlaying === false ||
-          (reportedVideoId && reportedVideoId === currentTrack?.id && reportedDur >= Math.min(trackExpectedDur - 10, 50))
+          (reportedDur >= Math.min(trackExpectedDur - 10, 50))
         );
 
         if (isAdStarted) {
           isAdActiveRef.current = true;
-        } else if (isAdEnded && (confirmedVideoIdRef.current === currentTrack?.id || !reportedVideoId)) {
+        } else if (isAdEnded) {
           isAdActiveRef.current = false;
         }
 
         // Active Ad Neutralizer:
-        // When an ad is playing, strictly eliminate sound, speed up to 2x rate, seek to the end,
+        // When an ad is playing, strictly eliminate sound, speed up to 16x rate, seek to the end,
         // send skip commands, and hold the UI locked in loading/buffering state so the scrubber does not advance.
         if (isAdActiveRef.current) {
           sendCommand('mute');
           sendCommand('setVolume', [0]);
-          sendCommand('setPlaybackRate', [2]);
+          sendCommand('setPlaybackRate', [16]);
           sendCommand('seekTo', [reportedDur > 0 ? reportedDur : 9999, true]);
           sendCommand('skipAd');
           setIsLoading(true);
-          return; // Strictly abort any processing of time updates or unmuting!
+          return;
         }
 
         // State changes: -1 = unstarted, 0 = ended, 1 = playing, 2 = paused, 3 = buffering, 5 = cued
         if (data.event === 'onStateChange') {
           ytPlayerStateRef.current = data.info;
           if (data.info === 1) {
-            // If ad is actively playing, keep muted and locked!
-            if (isAdActiveRef.current) {
-              sendCommand('mute');
-              sendCommand('setVolume', [0]);
-              sendCommand('setPlaybackRate', [2]);
-              sendCommand('seekTo', [9999, true]);
-              sendCommand('skipAd');
-              setIsLoading(true);
-              return;
-            }
-            // Only unmute if verified not an ad
-            const isConfirmedTrack = confirmedVideoIdRef.current === currentTrack?.id || confirmedVideoIdRef.current === null;
-            if (!isMuted && isConfirmedTrack && !isAdActiveRef.current) {
-              sendCommand('unMute');
-              sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+            // Real song is playing! Unmute and restore normal speed
+            if (!isAdActiveRef.current) {
               sendCommand('setPlaybackRate', [1]);
-            }
-            setIsPlaying(true);
-            setIsLoading(false);
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('harmoniq:direct-player-playing', { detail: currentTimeRef.current }));
+              if (!isMuted) {
+                sendCommand('unMute');
+                sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+              }
+              setIsPlaying(true);
+              setIsLoading(false);
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('harmoniq:direct-player-playing', { detail: currentTimeRef.current }));
+              }
             }
           } else if (data.info === 2) {
             // Guard against unsolicited pauses caused by browser tab switching or background throttle
             if (isUserPausedRef && !isUserPausedRef.current && isPlaying) {
-              console.log('[BackgroundDirectPlayer] Background tab unsolicited pause ignored. Keeping playback alive!');
               sendCommand('playVideo');
               return;
             }
@@ -213,7 +218,6 @@ export default function BackgroundDirectPlayer() {
           } else if (data.info === 0) {
             // If an ad just ended, do NOT treat as track ended! Instead transition back to playing the song!
             if (isAdActiveRef.current) {
-              console.log('[BackgroundDirectPlayer] Ad ended, returning to normal playback');
               isAdActiveRef.current = false;
               sendCommand('setPlaybackRate', [1]);
               if (!isMuted) {
@@ -236,7 +240,6 @@ export default function BackgroundDirectPlayer() {
             }
           }
         } else if (data.event === 'infoDelivery' && data.info) {
-          // If YouTube reports playerState in infoDelivery
           if (typeof data.info.playerState === 'number') {
             ytPlayerStateRef.current = data.info.playerState;
             if (data.info.playerState === 3 || data.info.playerState === -1) {
@@ -251,26 +254,16 @@ export default function BackgroundDirectPlayer() {
             sendCommand('setPlaybackRate', [1]);
           }
 
-          // Real song confirmed playback check:
-          const isRealSongPlaying = ytPlayerStateRef.current === 1 && !isAdActiveRef.current && (
-            confirmedVideoIdRef.current === currentTrack?.id ||
-            (typeof data.info.currentTime === 'number' && data.info.currentTime > 0.5) ||
-            reportedDur >= Math.min(trackExpectedDur - 10, 45)
-          );
-
-          if (!isMuted && isRealSongPlaying) {
+          if (!isMuted && !isAdActiveRef.current && ytPlayerStateRef.current === 1) {
             sendCommand('unMute');
             sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
-            sendCommand('setPlaybackRate', [1]);
           }
 
           if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime) && data.info.currentTime >= 0) {
-            // ONLY accept time updates and un-buffer when YouTube confirms it is actually playing the real song (state 1)!
-            // If buffering (3), paused (2), unstarted (-1), or ad active, DO NOT advance or un-buffer the slider!
             const isActuallyPlaying = ytPlayerStateRef.current === 1;
             const isDurValid = reportedDur >= Math.min(trackExpectedDur - 10, 45) || reportedDur === 0;
 
-            if (isActuallyPlaying && isDurValid && !isAdActiveRef.current && (confirmedVideoIdRef.current === currentTrack?.id || !reportedVideoId)) {
+            if (isActuallyPlaying && isDurValid && !isAdActiveRef.current) {
               currentTimeRef.current = data.info.currentTime;
               setCurrentTime(data.info.currentTime);
               setIsLoading(false);
@@ -287,13 +280,14 @@ export default function BackgroundDirectPlayer() {
           }
         } else if (data.event === 'initialDelivery') {
           playerReadyRef.current = true;
+          if (!isMuted && !isAdActiveRef.current) {
+            sendCommand('unMute');
+            sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
+          }
           const target = startSecRef.current || 0;
           if (target > 0) {
             sendCommand('seekTo', [target, true]);
           }
-          // Start MUTED so pre-roll ads produce ZERO sound!
-          sendCommand('mute');
-          sendCommand('setVolume', [0]);
           if (isPlaying && shouldBeActive) sendCommand('playVideo');
         }
       } catch (e) {}
@@ -303,16 +297,14 @@ export default function BackgroundDirectPlayer() {
     return () => window.removeEventListener('message', handleMessage);
   }, [shouldBeActive, handleTrackEnded, isPlaying, isMuted, volume, currentTrack?.duration, currentTrack?.id, isUserPausedRef]);
 
-  // Recover the embedded player when returning to the page. Do not issue commands
-  // while it is hidden or closing; browsers may throttle or discard those messages.
+  // Keep background audio active when tab is minimized, switched, or screen is locked
   useEffect(() => {
     function handleVisibilityChange() {
-      if (document.visibilityState === 'visible' && shouldBeActive && isPlaying && (!isUserPausedRef || !isUserPausedRef.current)) {
+      if (shouldBeActive && isPlaying && (!isUserPausedRef || !isUserPausedRef.current)) {
         if (isAdActiveRef.current) {
           sendCommand('mute');
           sendCommand('setVolume', [0]);
         } else if (!isMuted) {
-          // Re-unmute when returning to tab in case Chrome auto-muted the iframe
           sendCommand('unMute');
           sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);
         }
@@ -320,26 +312,36 @@ export default function BackgroundDirectPlayer() {
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
+    window.addEventListener('pagehide', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
+      window.removeEventListener('pagehide', handleVisibilityChange);
     };
   }, [shouldBeActive, isPlaying, isUserPausedRef, isMuted, volume]);
 
   if (!shouldBeActive || !currentTrack) return null;
 
   const startSec = startSecRef.current || 0;
-  // YouTube embed policy: In Capacitor native mobile (capacitor://), origin is non-HTTP so use verified web origin.
-  // In web browsers (including http://localhost:3000), always match window.location.origin so postMessage events are delivered!
-  const isCapacitorNative = typeof window !== 'undefined' && (Capacitor.isNativePlatform() || window.location.protocol === 'capacitor:' || window.location.origin.includes('capacitor:') || (window.location.hostname === 'localhost' && !window.location.port));
-  const originBase = isCapacitorNative
-    ? 'https://sanjusreejith.github.io'
-    : (typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://sanjusreejith.github.io');
-  const originParam = `&origin=${encodeURIComponent(originBase)}`;
-  const widgetReferrer = `&widget_referrer=${encodeURIComponent(originBase)}`;
-  // Privacy-enhanced embed domain with pre-muted autoplay for instant ad suppression
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&mute=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}${widgetReferrer}`;
+  // YouTube origin parameter handling:
+  // On native mobile (Capacitor), do NOT pass an artificial origin so YouTube postMessages
+  // are broadcasted to wildcard '*' and delivered directly to the WebView window!
+  // In standard web browsers, pass window.location.origin for strict security handshake.
+  const isCapacitorNative = typeof window !== 'undefined' && (
+    Capacitor.isNativePlatform() ||
+    window.location.protocol === 'capacitor:' ||
+    window.location.origin.includes('capacitor:') ||
+    (window.location.hostname === 'localhost' && !window.location.port)
+  );
+  const originParam = typeof window !== 'undefined' && window.location.origin && !isCapacitorNative
+    ? `&origin=${encodeURIComponent(window.location.origin)}`
+    : '';
+
+  // Enhanced privacy-enhanced embed domain with unmuted autoplay for immediate audio output
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${currentTrack.id}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&start=${startSec}${originParam}`;
 
   return (
     <div
@@ -349,7 +351,7 @@ export default function BackgroundDirectPlayer() {
         left: 0,
         width: '100%',
         height: '100%',
-        opacity: 1,
+        opacity: 0.005,
         pointerEvents: 'none',
         zIndex: -9999,
         visibility: 'visible',

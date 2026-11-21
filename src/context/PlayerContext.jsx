@@ -1186,14 +1186,36 @@ export function PlayerProvider({ children }) {
         streamUrl = getAudioStreamUrl(track.id, audioQuality);
       }
 
+      // Check if this stream is directed to the Render cloud server
+      const isCloudStream = Boolean(streamUrl && streamUrl.includes('onrender.com'));
+      if (isCloudStream) {
+        // Render cloud server cannot stream audio due to datacenter IP restrictions.
+        // Route immediately to the zero-ad direct player engine for uninterrupted, flawless playback!
+        console.log('[Player] Cloud stream detected without PC server. Routing directly to direct player engine:', track.id);
+        if (audioRef.current) {
+          try {
+            audioRef.current.pause();
+            audioRef.current.removeAttribute('src');
+            audioRef.current.srcObject = null;
+            audioRef.current.load();
+          } catch (e) {}
+        }
+        nativePlaybackRef.current = false;
+        setUseDirectPlayer(true);
+        useDirectPlayerRef.current = true;
+        setIsPlaying(true);
+        setIsLoading(true);
+        return;
+      }
+
       // Normal mode: Standard audio engine is active with real audio stream
       setUseDirectPlayer(false);
       useDirectPlayerRef.current = false;
 
-      // If running on native Android with a valid stream URL (LAN PC or Cloud):
+      // If running on native Android with a valid LAN/PC stream URL:
       // Stream directly through the native Foreground Service's MediaPlayer.
       // This enables 100% background playback even when the app is completely exited, screen is off, or phone is locked (Spotify behavior)!
-      if (isNativePlatform() && streamUrl && streamUrl.startsWith('http')) {
+      if (isNativePlatform() && streamUrl && streamUrl.startsWith('http') && !isCloudStream) {
         console.log('[Player] Native Android: Starting native MediaPlayer in ForegroundService:', streamUrl);
         const played = await playNativeStream({
           url: streamUrl,

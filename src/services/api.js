@@ -2,13 +2,13 @@
 import { Capacitor } from '@capacitor/core';
 
 export const CLOUD_FALLBACK_SERVER = 'https://harmoniq-server-jqpm.onrender.com';
-export const PC_WIFI_SERVER = 'http://10.128.89.220:3000';     // Wi-Fi LAN (Active)
+export const PC_WIFI_SERVER = 'http://192.168.1.40:3000';      // Wi-Fi LAN (Active)
 export const PC_USB_SERVER = 'http://10.210.177.65:3000';      // USB Tethering (High Speed)
 export const PC_HOTSPOT_SERVER = 'http://192.168.137.1:3000';  // Windows Mobile Hotspot
 export const PC_LAN_SERVER = PC_WIFI_SERVER;
 
 export const KNOWN_LAN_SERVERS = [
-  PC_WIFI_SERVER,
+  'http://192.168.1.40:3000',
   'http://10.128.89.220:3000',
   PC_USB_SERVER,
   PC_HOTSPOT_SERVER,
@@ -255,7 +255,7 @@ export async function resolveServer(force = false) {
 
   // Probe PC endpoints in parallel with responsive 1200ms timeout
   try {
-    const lanEndpoints = [PC_WIFI_SERVER, 'http://10.128.89.220:3000', PC_USB_SERVER, PC_HOTSPOT_SERVER];
+    const lanEndpoints = KNOWN_LAN_SERVERS;
     const pingPromises = lanEndpoints.map(srv => pingServer(srv, 1200));
     const results = await Promise.all(pingPromises);
     const valid = results.filter(Boolean);
