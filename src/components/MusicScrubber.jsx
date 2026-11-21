@@ -6,7 +6,8 @@ export default function MusicScrubber({
   duration = 0,
   buffered = 0,
   isLoading = false,
-  onSeek
+  onSeek,
+  hideTimeRow = false
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragValue, setDragValue] = useState(0);
@@ -18,12 +19,10 @@ export default function MusicScrubber({
   // Fallback to reasonable 3-minute duration if metadata not yet resolved so scrubber is always interactive
   const safeDuration = (typeof duration === 'number' && duration > 5 && isFinite(duration)) ? duration : 180;
   
-  // Guard: If track is loading and hasn't started playing, strictly lock display time to 0
-  const isInitialBuffering = isLoading && (!currentTime || currentTime < 1);
   const displayTime = isDragging 
     ? dragValue 
-    : (isInitialBuffering ? 0 : (typeof currentTime === 'number' && isFinite(currentTime) ? currentTime : 0));
-  const progressPercent = (safeDuration > 0 && !isInitialBuffering) 
+    : (typeof currentTime === 'number' && isFinite(currentTime) ? Math.max(0, currentTime) : 0);
+  const progressPercent = safeDuration > 0 
     ? Math.min(100, Math.max(0, (displayTime / safeDuration) * 100)) 
     : 0;
   const safeBuffered = (typeof buffered === 'number' && isFinite(buffered)) ? buffered : 0;
@@ -166,40 +165,42 @@ export default function MusicScrubber({
       </div>
 
       {/* Time Display & 10s Jump Controls */}
-      <div className="flex items-center justify-between text-xs font-medium text-slate-400 px-0.5">
-        <span className="font-mono text-slate-300">{formatTime(displayTime)}</span>
+      {!hideTimeRow && (
+        <div className="flex items-center justify-between text-xs font-medium text-slate-400 px-0.5">
+          <span className="font-mono text-slate-300">{formatTime(displayTime)}</span>
 
-        {/* Quick -10s and +10s Jump buttons */}
-        <div className="flex items-center gap-3">
+          {/* Quick -10s and +10s Jump buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => jumpRelative(-10)}
+              className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-white/5 transition-colors flex items-center gap-0.5 text-[10px]"
+              title="Rewind 10 seconds"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>10</span>
+            </button>
+            <button
+              onClick={() => jumpRelative(10)}
+              className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-white/5 transition-colors flex items-center gap-0.5 text-[10px]"
+              title="Forward 10 seconds"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>10</span>
+            </button>
+          </div>
+
+          {/* Toggle Total vs Remaining Time on click */}
           <button
-            onClick={() => jumpRelative(-10)}
-            className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-white/5 transition-colors flex items-center gap-0.5 text-[10px]"
-            title="Rewind 10 seconds"
+            onClick={() => setShowRemaining(!showRemaining)}
+            className="font-mono hover:text-emerald-400 transition-colors text-right"
+            title="Tap to toggle remaining time"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>10</span>
-          </button>
-          <button
-            onClick={() => jumpRelative(10)}
-            className="text-slate-400 hover:text-white p-1 rounded-full hover:bg-white/5 transition-colors flex items-center gap-0.5 text-[10px]"
-            title="Forward 10 seconds"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-            <span>10</span>
+            {showRemaining
+              ? `-${formatTime(Math.max(0, safeDuration - displayTime))}`
+              : formatTime(duration > 0 ? duration : safeDuration)}
           </button>
         </div>
-
-        {/* Toggle Total vs Remaining Time on click */}
-        <button
-          onClick={() => setShowRemaining(!showRemaining)}
-          className="font-mono hover:text-emerald-400 transition-colors text-right"
-          title="Tap to toggle remaining time"
-        >
-          {showRemaining
-            ? `-${formatTime(Math.max(0, safeDuration - displayTime))}`
-            : formatTime(duration > 0 ? duration : safeDuration)}
-        </button>
-      </div>
+      )}
     </div>
   );
 }

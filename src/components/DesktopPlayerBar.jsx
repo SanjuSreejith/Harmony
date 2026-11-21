@@ -51,7 +51,8 @@ export default function DesktopPlayerBar() {
     setShowSleepTimer,
     setIsNowPlayingExpanded,
     useDirectPlayer,
-    audioQuality
+    audioQuality,
+    isLoading
   } = usePlayer();
 
   if (!currentTrack) return null;
@@ -188,22 +189,29 @@ export default function DesktopPlayerBar() {
         </div>
 
         {/* Scrubber Row */}
-        <div className="w-full flex items-center gap-3">
-          <span className="text-[11px] font-mono text-slate-400 w-10 text-right">
-            {formatTime(currentTime)}
-          </span>
-          <div className="flex-1">
-            <MusicScrubber
-              currentTime={currentTime}
-              duration={duration}
-              buffered={buffered}
-              onSeek={seekTo}
-            />
-          </div>
-          <span className="text-[11px] font-mono text-slate-400 w-10 text-left">
-            {formatTime(duration)}
-          </span>
-        </div>
+        {(() => {
+          const safeDuration = duration > 5 ? duration : (currentTrack?.duration > 5 ? currentTrack.duration : 180);
+          return (
+            <div className="w-full flex items-center gap-3">
+              <span className="text-[11px] font-mono text-slate-400 w-10 text-right">
+                {formatTime(currentTime)}
+              </span>
+              <div className="flex-1">
+                <MusicScrubber
+                  currentTime={currentTime}
+                  duration={safeDuration}
+                  buffered={buffered}
+                  isLoading={isLoading}
+                  onSeek={seekTo}
+                  hideTimeRow={true}
+                />
+              </div>
+              <span className="text-[11px] font-mono text-slate-400 w-10 text-left">
+                {formatTime(safeDuration)}
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Right: Actions & Volume */}

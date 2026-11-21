@@ -33,6 +33,7 @@ export default function BackgroundDirectPlayer() {
   const timerRef = useRef(null);
   const startSecRef = useRef(0);
   const currentTimeRef = useRef(0);
+  const lastSeekRef = useRef(null);
 
   const isOfflineTrack = Boolean(isDownloaded && currentTrack && isDownloaded(currentTrack.id));
 
@@ -108,12 +109,17 @@ export default function BackgroundDirectPlayer() {
       if (!shouldBeActive) return;
       const sec = e.detail;
       if (typeof sec === 'number' && isFinite(sec)) {
+        lastSeekRef.current = { time: sec, timestamp: Date.now() };
+        currentTimeRef.current = sec;
         sendCommand('seekTo', [sec, true]);
+        if (isPlaying) {
+          sendCommand('playVideo');
+        }
       }
     }
     window.addEventListener('harmoniq:seek', onSeekEvent);
     return () => window.removeEventListener('harmoniq:seek', onSeekEvent);
-  }, [shouldBeActive]);
+  }, [shouldBeActive, isPlaying]);
 
   // Handle Volume & Mute commands
   useEffect(() => {
@@ -260,10 +266,17 @@ export default function BackgroundDirectPlayer() {
           }
 
           if (typeof data.info.currentTime === 'number' && isFinite(data.info.currentTime) && data.info.currentTime >= 0) {
-            const isActuallyPlaying = ytPlayerStateRef.current === 1;
-            const isDurValid = reportedDur >= Math.min(trackExpectedDur - 10, 45) || reportedDur === 0;
+            // Guard against transient pre-seek stale time reports immediately after user seeks
+            if (lastSeekRef.current && (Date.now() - lastSeekRef.current.timestamp < 1200)) {
+              if (Math.abs(data.info.currentTime - lastSeekRef.current.time) > 4) {
+                return; // Ignore stale pre-seek time until YouTube seeks to requested position
+              } else {
+                lastSeekRef.current = null;
+              }
+            }
 
-            if (isActuallyPlaying && isDurValid && !isAdActiveRef.current) {
+            if (!isAdActiveRef.current) {
+              ytPlayerStateRef.current = 1;
               currentTimeRef.current = data.info.currentTime;
               setCurrentTime(data.info.currentTime);
               setIsLoading(false);
@@ -275,11 +288,14 @@ export default function BackgroundDirectPlayer() {
               setCurrentTime(0);
             }
           }
-          if (typeof data.info.duration === 'number' && data.info.duration > 45 && isFinite(data.info.duration)) {
+          if (typeof data.info.duration === 'number' && data.info.duration > 15 && isFinite(data.info.duration)) {
             setDuration(data.info.duration);
           }
         } else if (data.event === 'initialDelivery') {
           playerReadyRef.current = true;
+          if (currentTrack?.duration && currentTrack.duration > 15) {
+            setDuration(currentTrack.duration);
+          }
           if (!isMuted && !isAdActiveRef.current) {
             sendCommand('unMute');
             sendCommand('setVolume', [Math.round((volume || 1.0) * 100)]);

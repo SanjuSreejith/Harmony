@@ -535,7 +535,7 @@ export function PlayerProvider({ children }) {
       hasRealAudioStartedRef.current = true;
       setHasRealAudioStarted(true);
       setIsLoading(false);
-      if (typeof e.detail === 'number' && isFinite(e.detail) && e.detail > 0) {
+      if (typeof e.detail === 'number' && isFinite(e.detail) && e.detail >= 0) {
         currentTimeRef.current = e.detail;
         setCurrentTimeState(e.detail);
       }
